@@ -251,3 +251,67 @@ struct FeatureFlagsResponse: Decodable {
 
     let flags: [Flag]
 }
+
+/// One client API key from `GET /api/keys`. OmniRoute masks `key` in the list;
+/// the full value is only returned when a key is created or revealed.
+public struct APIKeyInfo: Decodable, Sendable, Equatable, Identifiable {
+    public let id: String
+    public let name: String?
+    /// The masked key, for example `sk-a****wxyz`.
+    public let key: String?
+    public let isActive: Bool?
+    public let isBanned: Bool?
+    public let revokedAt: String?
+    public let expiresAt: String?
+
+    public init(id: String, name: String?, key: String?, isActive: Bool? = true, isBanned: Bool? = false,
+                revokedAt: String? = nil, expiresAt: String? = nil) {
+        self.id = id
+        self.name = name
+        self.key = key
+        self.isActive = isActive
+        self.isBanned = isBanned
+        self.revokedAt = revokedAt
+        self.expiresAt = expiresAt
+    }
+
+    /// Not revoked, banned, switched off or past its expiry.
+    public func isUsable(at now: Date = Date()) -> Bool {
+        guard isActive != false, isBanned != true, revokedAt == nil else { return false }
+        guard let expiresAt else { return true }
+        let parser = ISO8601DateFormatter()
+        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = parser.date(from: expiresAt) ?? ISO8601DateFormatter().date(from: expiresAt)
+        return date.map { $0 > now } ?? true
+    }
+}
+
+/// `GET /api/keys`: the keys plus whether OmniRoute lets stored keys be revealed.
+public struct APIKeyList: Decodable, Sendable, Equatable {
+    public let keys: [APIKeyInfo]
+    public let allowKeyReveal: Bool
+
+    public init(keys: [APIKeyInfo], allowKeyReveal: Bool) {
+        self.keys = keys
+        self.allowKeyReveal = allowKeyReveal
+    }
+
+    enum CodingKeys: String, CodingKey { case keys, allowKeyReveal }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        keys = try container.decodeIfPresent([APIKeyInfo].self, forKey: .keys) ?? []
+        allowKeyReveal = try container.decodeIfPresent(Bool.self, forKey: .allowKeyReveal) ?? false
+    }
+}
+
+/// `POST /api/keys`: the only answer that carries a new key in full.
+public struct CreatedAPIKey: Decodable, Sendable {
+    public let id: String
+    public let name: String?
+    public let key: String
+}
+
+struct RevealedAPIKey: Decodable {
+    let key: String
+}

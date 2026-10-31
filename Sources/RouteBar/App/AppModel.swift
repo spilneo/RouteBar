@@ -65,6 +65,7 @@ final class AppModel {
     }
 
     let preferences = Preferences()
+    let apiKeyState = APIKeyState()
 
     // MARK: Collaborators and caches
 
@@ -225,7 +226,7 @@ final class AppModel {
                 catalogFetchedAt = Date()
             }
             let fetched = try await client.connections()
-            let entries = try await client.models()
+            let entries = try await fetchModels(client: client)
             guard generation == self.generation else { return false }
             connections = fetched
             let active = Set(fetched.filter(\.isUsable).map(\.provider))

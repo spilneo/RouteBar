@@ -2,6 +2,10 @@ import Foundation
 
 public enum OmniRouteError: LocalizedError, Equatable {
     case unauthorized
+    /// OmniRoute's `REQUIRE_API_KEY` is on and the request carried no valid client API key.
+    case apiKeyRequired
+    /// OmniRoute keeps stored keys hidden (`ALLOW_API_KEY_REVEAL` is off).
+    case revealDisabled
     /// A remote server refused the access token, or the password for a new one.
     case refused(String?)
     case http(Int, String?)
@@ -11,6 +15,10 @@ public enum OmniRouteError: LocalizedError, Equatable {
         switch self {
         case .unauthorized:
             "OmniRoute refused RouteBar's local token."
+        case .apiKeyRequired:
+            "OmniRoute requires an API key. Create one in Settings, Endpoint."
+        case .revealDisabled:
+            "OmniRoute hides stored keys. Turn on API Key Reveal in its dashboard, or create a new key in RouteBar."
         case .refused(let message):
             message ?? "The server refused RouteBar's access token. Sign in again in Settings."
         case .http(let status, let message):
@@ -73,15 +81,44 @@ public struct OmniRouteClient: Sendable {
     }
 
     /// One id per model (`?prefix=alias`) instead of the doubled `dual` catalog.
-    /// Read through the management API, which takes RouteBar's credential, so it
-    /// keeps working when OmniRoute requires an API key on `/v1`. A local server
-    /// too old to have that route falls back to the public `/v1/models`.
-    public func models() async throws -> [ModelEntry] {
+    /// `/api/v1/models` is a client API route: when OmniRoute requires an API key
+    /// it refuses RouteBar's management credential and needs `apiKey`, which
+    /// surfaces as `OmniRouteError.apiKeyRequired`. A local server too old to have
+    /// that route falls back to the public `/v1/models`.
+    public func models(apiKey: String? = nil) async throws -> [ModelEntry] {
         let query = [URLQueryItem(name: "prefix", value: "alias")]
         do {
-            return try await get("/api/v1/models", query: query, as: ModelsResponse.self).data
+            return try await decode(ModelsResponse.self, send(request("/api/v1/models", query: query, bearer: apiKey))).data
         } catch OmniRouteError.http(404, _) where isLocal {
-            return try await get("/v1/models", query: query, as: ModelsResponse.self).data
+            return try await decode(ModelsResponse.self, send(request("/v1/models", query: query, bearer: apiKey))).data
+        } catch OmniRouteError.unauthorized where isLocal {
+            throw OmniRouteError.apiKeyRequired
+        }
+    }
+
+    // MARK: Client API keys
+
+    /// The server's API keys, masked, and whether stored keys may be revealed.
+    public func apiKeys() async throws -> APIKeyList {
+        try await get("/api/keys", as: APIKeyList.self)
+    }
+
+    /// Creates a client API key that may use every model. The full key is only in this answer.
+    public func createAPIKey(name: String) async throws -> CreatedAPIKey {
+        let body = try JSONSerialization.data(withJSONObject: ["name": name, "scopes": [String]()])
+        return try await decode(CreatedAPIKey.self, send(request("/api/keys", method: "POST", body: body)))
+    }
+
+    /// A stored key in full. Throws `revealDisabled` unless `ALLOW_API_KEY_REVEAL` is on.
+    public func revealAPIKey(id: String) async throws -> String {
+        guard let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { throw OmniRouteError.http(404, nil) }
+        do {
+            return try await decode(RevealedAPIKey.self, send(request("/api/keys/\(escaped)/reveal"))).key
+        } catch OmniRouteError.unauthorized {
+            // Management calls with the local token otherwise succeed, so a refusal here is the reveal switch.
+            throw OmniRouteError.revealDisabled
+        } catch OmniRouteError.refused(let message) where message?.localizedCaseInsensitiveContains("reveal") == true {
+            throw OmniRouteError.revealDisabled
         }
     }
 
@@ -184,11 +221,17 @@ public struct OmniRouteClient: Sendable {
     // MARK: - Plumbing
 
     private func get<T: Decodable>(_ path: String, query: [URLQueryItem] = [], as type: T.Type) async throws -> T {
-        let data = try await send(request(path, query: query))
-        return try JSONDecoder().decode(T.self, from: data)
+        try await decode(T.self, send(request(path, query: query)))
     }
 
-    private func request(_ path: String, method: String = "GET", query: [URLQueryItem] = [], body: Data? = nil) -> URLRequest {
+    private func decode<T: Decodable>(_ type: T.Type, _ data: Data) throws -> T {
+        try JSONDecoder().decode(T.self, from: data)
+    }
+
+    /// `bearer` is a client API key for `/v1`-style routes, sent as `Authorization: Bearer`.
+    private func request(
+        _ path: String, method: String = "GET", query: [URLQueryItem] = [], body: Data? = nil, bearer: String? = nil
+    ) -> URLRequest {
         var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)!
         if !query.isEmpty { components.queryItems = query }
         var request = URLRequest(url: components.url!)
@@ -202,6 +245,7 @@ public struct OmniRouteClient: Sendable {
             if let accessToken { request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization") }
             if let cliToken { request.setValue(cliToken, forHTTPHeaderField: CLIToken.header) }
         }
+        if let bearer, accessToken == nil { request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
         return request
     }
 

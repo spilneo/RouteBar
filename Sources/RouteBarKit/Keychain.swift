@@ -1,12 +1,16 @@
 import Foundation
 import Security
 
-/// Small wrapper over generic-password Keychain items, used for remote access tokens.
+/// Small wrapper over generic-password Keychain items, used for remote access
+/// tokens and OmniRoute API keys.
 public struct Keychain: Sendable {
     public let service: String
+    /// What Keychain Access shows for the items.
+    public let label: String
 
-    public init(service: String) {
+    public init(service: String, label: String = "RouteBar: OmniRoute access token") {
         self.service = service
+        self.label = label
     }
 
     public func read(_ account: String) -> String? {
@@ -27,7 +31,7 @@ public struct Keychain: Sendable {
         var item = base(account)
         item[kSecValueData as String] = data
         item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        item[kSecAttrLabel as String] = "RouteBar: OmniRoute access token"
+        item[kSecAttrLabel as String] = label
         return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
     }
 

@@ -44,6 +44,7 @@ extension AppModel {
         tunnelCheckedAt = nil
         tunnelOpenAttemptAt = nil
         requiresAPIKeyCheckedAt = nil
+        apiKeyState.reset()
     }
 
     /// Polls the tunnel while Internet is chosen and reopens it when it is down,
@@ -117,6 +118,7 @@ extension AppModel {
         guard generation == self.generation else { return }
         requiresAPIKeyCheckedAt = Date()
         update(\.requiresAPIKey, to: required)
+        await refreshAPIKeys()
     }
 
     func setRequiresAPIKey(_ enabled: Bool) {
@@ -126,7 +128,9 @@ extension AppModel {
                 try await client.setRequiresAPIKey(enabled)
                 guard generation == self.generation else { return }
                 await refreshRequiresAPIKey(force: true)
-                show(enabled ? "Every app now needs an OmniRoute API key" : "Apps can use the endpoint without a key")
+                // RouteBar needs a key for the model list from now on, and the user one to copy.
+                if enabled, apiKeyState.copyable.isEmpty { apiKeyState.modelsKey = await ownAPIKey(client: client, announce: false) }
+                show(enabled ? "Every app now needs an OmniRoute API key. Copy one in Settings." : "Apps can use the endpoint without a key")
             } catch {
                 guard generation == self.generation else { return }
                 show("Could not change the API key requirement: \(error.localizedDescription)")

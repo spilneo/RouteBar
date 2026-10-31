@@ -104,8 +104,14 @@ and closes it when you choose another option or switch the endpoint off.
 OmniRoute serves requests without an API key unless its **Require API Key** setting is on, so
 anyone who has a Network or Internet address could use your subscriptions. While either is
 chosen, Settings shows that setting as **Require an API key** and warns when a public address is
-open without it. It applies to every app, including those on this Mac, so give your apps one of
-your OmniRoute API keys before turning it on. RouteBar itself keeps working either way.
+open without it. It applies to every app, including those on this Mac.
+
+While a key is required, Settings lists your OmniRoute API keys with a copy button each, and
+**New Key** creates one and copies it, so apps can be set up without the dashboard. OmniRoute
+only hands out a key in full when it is created, so RouteBar keeps the keys it creates or copies
+in your macOS Keychain. Keys made elsewhere can be copied once **API Key Reveal** is on in
+OmniRoute's dashboard. RouteBar lists models with a key of its own, named `RouteBar`, which it
+creates the first time one is required.
 
 ## Remote servers
 

@@ -159,6 +159,71 @@ final class RemoteClientTests: XCTestCase {
         XCTAssertEqual(try JSONSerialization.jsonObject(with: body) as? [String: String], ["key": "REQUIRE_API_KEY", "value": "true"])
     }
 
+    func testRequiredKeyIsReportedInsteadOfARefusedLocalToken() async throws {
+        StubProtocol.routes = ["GET /api/v1/models": (401, #"{"error":{"code":"AUTH_002","message":"Authentication required"}}"#)]
+        do {
+            _ = try await client("http://127.0.0.1:20128").models()
+            XCTFail("expected apiKeyRequired")
+        } catch {
+            XCTAssertEqual(error as? OmniRouteError, .apiKeyRequired)
+        }
+    }
+
+    func testModelsWithAnAPIKeySendBothCredentials() async throws {
+        StubProtocol.routes = ["GET /api/v1/models": (200, #"{"data":[]}"#)]
+        _ = try await client("http://127.0.0.1:20128").models(apiKey: "sk-test")
+        let headers = try XCTUnwrap(StubProtocol.requests.first?.headers)
+        XCTAssertEqual(headers["Authorization"], "Bearer sk-test")
+        XCTAssertEqual(headers[CLIToken.header], "machine")
+    }
+
+    func testRemoteAccessTokenIsNotReplacedByAnAPIKey() async throws {
+        StubProtocol.routes = ["GET /api/v1/models": (200, #"{"data":[]}"#)]
+        _ = try await client("http://10.0.0.5:20128", accessToken: "oma_x").models(apiKey: "sk-test")
+        XCTAssertEqual(StubProtocol.requests.first?.headers["Authorization"], "Bearer oma_x")
+    }
+
+    func testCreatingAKeyReturnsItInFull() async throws {
+        StubProtocol.routes = ["POST /api/keys": (200, #"{"id":"k1","name":"RouteBar","key":"sk-full-key","scopes":[]}"#)]
+        let created = try await client("http://127.0.0.1:20128").createAPIKey(name: "RouteBar")
+        XCTAssertEqual(created.id, "k1")
+        XCTAssertEqual(created.key, "sk-full-key")
+        let body = try XCTUnwrap(StubProtocol.requests.first?.body)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(json["name"] as? String, "RouteBar")
+        XCTAssertEqual(json["scopes"] as? [String], [])
+    }
+
+    func testRevealWorksOnlyWhenOmniRouteAllowsIt() async throws {
+        let local = client("http://127.0.0.1:20128")
+        StubProtocol.routes = ["GET /api/keys/k1/reveal": (200, #"{"key":"sk-full-key"}"#)]
+        let revealed = try await local.revealAPIKey(id: "k1")
+        XCTAssertEqual(revealed, "sk-full-key")
+
+        StubProtocol.routes = ["GET /api/keys/k1/reveal": (403, #"{"error":"API key reveal is disabled"}"#)]
+        do {
+            _ = try await local.revealAPIKey(id: "k1")
+            XCTFail("expected revealDisabled")
+        } catch {
+            XCTAssertEqual(error as? OmniRouteError, .revealDisabled)
+        }
+    }
+
+    func testKeyListSkipsUnusableKeys() throws {
+        let json = #"""
+        {"keys":[
+          {"id":"a","name":"Live","key":"sk-a****wxyz","isActive":true,"revokedAt":null,"expiresAt":null},
+          {"id":"b","name":"Revoked","key":"sk-b****","isActive":true,"revokedAt":"2026-01-01T00:00:00.000Z"},
+          {"id":"c","name":"Off","key":"sk-c****","isActive":false},
+          {"id":"d","name":"Expired","key":"sk-d****","expiresAt":"2020-01-01T00:00:00.000Z"},
+          {"id":"e","name":"Later","key":"sk-e****","expiresAt":"2999-01-01T00:00:00Z"}
+        ],"allowKeyReveal":false}
+        """#
+        let list = try JSONDecoder().decode(APIKeyList.self, from: Data(json.utf8))
+        XCTAssertFalse(list.allowKeyReveal)
+        XCTAssertEqual(list.keys.filter { $0.isUsable() }.map(\.id), ["a", "e"])
+    }
+
     func testMintingSendsPasswordAndReturnsToken() async throws {
         StubProtocol.routes = ["POST /api/cli/connect": (200, #"{"token":"oma_new","scope":"admin"}"#)]
         let minted = try await client("http://10.0.0.5:20128", cliToken: nil).mintAccessToken(password: "pw", name: "RouteBar")
