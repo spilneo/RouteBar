@@ -58,8 +58,8 @@ RouteBar needs macOS 14 Sonoma or later. Homebrew also installs Node.js, which O
 4. Copy the endpoint and paste it into any OpenAI-compatible app. RouteBar shows this Mac's
    network address, for example `http://192.168.68.53:20128/v1`, so the same URL also works from
    other devices on your network. It falls back to `localhost` when OmniRoute does not answer on
-   the network address, and Settings can always show `localhost` instead. Requests from other
-   devices need one of your OmniRoute API keys. Requests from this Mac do not.
+   the network address. Settings can switch to `localhost` only, or to a public address that
+   works from anywhere (see [Endpoint](#endpoint)).
 
 ```sh
 curl http://localhost:20128/v1/models
@@ -70,7 +70,7 @@ curl http://localhost:20128/v1/models
 | Section       | What it shows                                                                                         |
 | ------------- | ----------------------------------------------------------------------------------------------------- |
 | **Header**    | Whether the endpoint is running and how many requests it is serving right now, the OmniRoute version (with a note when an update is out), a button to the full dashboard, and the on/off switch. |
-| **Endpoint**  | The base URL for your apps, with a copy button. The network address by default, `localhost` on request. |
+| **Endpoint**  | The base URL for your apps, with a copy button. The network address by default; `localhost` or a public Cloudflare address on request. |
 | **Usage**     | Tokens and requests over 7 or 30 days. Hover a bar to see that day.                                   |
 | **Providers** | Each connected provider with its logo and live subscription limits, shortest window on top, such as Claude's 5-hour window above the weekly one. Meters turn orange at 80% and red at 95%, and show when each window resets. A provider with several accounts shows how many, and its meters follow the busiest account. Click a tile to see every account with its own limits. More than eight providers scroll. |
 | **Models**    | Only the models your active providers serve. Click the search bar to unfold the list inside it; nothing is focused until you do. Type to filter, use the arrow keys and Return to copy, click a row to copy it, or press Esc to fold it away. The refresh button asks every active provider for its current models, which picks up new releases. Each provider is also refreshed once automatically when RouteBar first sees it. |
@@ -83,8 +83,29 @@ The gear opens Settings in the panel.
 - **Appearance.** Pick the accent colour from eight presets (teal by default), and turn the translucent panel off
   for a solid background.
 - **Server.** Manage the OmniRoute on this Mac or one on another machine (see below).
-- **Endpoint.** Show the network address or `localhost`.
+- **Endpoint.** Who the endpoint is for: **This Mac** (`localhost`), **Network** (this Mac's
+  network address, the default) or **Internet** (a public address, see below).
 - **General.** Automatic login import and Open at Login.
+
+## Endpoint
+
+| Choice       | Address                                         | Reachable from                    |
+| ------------ | ----------------------------------------------- | --------------------------------- |
+| **This Mac** | `http://localhost:20128/v1`                     | apps on this Mac                  |
+| **Network**  | `http://192.168.68.53:20128/v1`                 | this Mac and your local network   |
+| **Internet** | `https://some-random-words.trycloudflare.com/v1` | anywhere                          |
+
+**Internet** asks OmniRoute to open a free Cloudflare quick tunnel, the same one as in the
+dashboard. OmniRoute uses `cloudflared` from your `PATH` (`brew install cloudflared`) or downloads
+it the first time. Opening takes a few seconds, and the address changes each time the tunnel
+opens, for example after OmniRoute restarts. RouteBar reopens it whenever OmniRoute is running,
+and closes it when you choose another option or switch the endpoint off.
+
+OmniRoute serves requests without an API key unless its **Require API Key** setting is on, so
+anyone who has a Network or Internet address could use your subscriptions. While either is
+chosen, Settings shows that setting as **Require an API key** and warns when a public address is
+open without it. It applies to every app, including those on this Mac, so give your apps one of
+your OmniRoute API keys before turning it on. RouteBar itself keeps working either way.
 
 ## Remote servers
 
@@ -113,7 +134,7 @@ combos, API keys and routing rules.
 - **Native.** Swift and SwiftUI with Swift Charts. No web view and no bundled runtime.
 - **Your servers only.** RouteBar talks to OmniRoute on `127.0.0.1`, and to a remote OmniRoute
   only when you add one. It checks whether OmniRoute answers on your network address so it can
-  show that address.
+  show that address. The public tunnel is opened by OmniRoute, never by RouteBar directly.
 - **No passwords.** Management calls use OmniRoute's own machine-bound CLI token, derived the
   same way the `omniroute` CLI does it. RouteBar keeps working after you set a dashboard password.
   That token is only ever sent to this Mac. A remote server gets its own scoped access token.

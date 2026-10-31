@@ -33,6 +33,7 @@ struct SettingsView: View {
             footer
         }
         .onAppear { wantsRemote = model.preferences.usesRemote }
+        .task { await model.refreshRequiresAPIKey(force: true) }
     }
 
     // MARK: Sections
@@ -107,18 +108,56 @@ struct SettingsView: View {
     }
 
     @ViewBuilder private var endpointSection: some View {
-        @Bindable var preferences = model.preferences
-        SegmentedPicker(selection: $preferences.endpointHost, options: EndpointHost.allCases.map { ($0, $0.label) })
+        let host = model.preferences.endpointHost
+        SegmentedPicker(
+            selection: Binding(get: { model.preferences.endpointHost }, set: { model.setEndpointHost($0) }),
+            options: EndpointHost.allCases.map { ($0, $0.label) }
+        )
         caption(endpointCaption)
+        if host == .tunnel, let error = model.tunnelError, !model.isChangingTunnel {
+            Text("The tunnel did not open: \(error)")
+                .font(.system(size: 10.5))
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        if host != .localhost, model.server == .running {
+            Divider().opacity(0.5)
+            row("Require an API key", detail: "For every app, including on this Mac") {
+                Toggle("Require an API key", isOn: Binding(
+                    get: { model.requiresAPIKey ?? false },
+                    set: { model.setRequiresAPIKey($0) }
+                ))
+                .switchStyle()
+                .disabled(model.requiresAPIKey == nil)
+            }
+            if model.requiresAPIKey == false {
+                Text(host == .tunnel
+                    ? "Anyone who has the address can use your subscriptions. Turn this on and give your apps an OmniRoute API key."
+                    : "Any device on your network can use your subscriptions.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(host == .tunnel ? Color.orange : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private var endpointCaption: String {
-        guard model.preferences.endpointHost == .network else { return "Works only for apps on this Mac." }
-        if let address = model.lanAddress {
-            return "\(address) works for apps on this Mac and on your network. Other devices need an OmniRoute API key."
+        switch model.preferences.endpointHost {
+        case .localhost:
+            return "localhost works only for apps on this Mac."
+        case .network:
+            if let address = model.lanAddress { return "\(address) works for apps on this Mac and on your network." }
+            if model.server != .running { return "The network address appears once OmniRoute is running." }
+            return "No network address answers right now, so localhost is shown."
+        case .tunnel:
+            if let host = model.tunnelRoot?.host {
+                return "\(host) works from anywhere through a free Cloudflare quick tunnel. "
+                    + "The address changes each time the tunnel opens."
+            }
+            if model.server != .running { return "A public Cloudflare address opens once OmniRoute is running." }
+            if model.isTunnelPending { return "Opening a Cloudflare quick tunnel. This can take up to half a minute." }
+            return "A free Cloudflare quick tunnel gives OmniRoute a public https address. The network address is shown until it opens."
         }
-        if model.server != .running { return "The network address appears once OmniRoute is running." }
-        return "No network address answers right now, so localhost is shown."
     }
 
     @ViewBuilder private var generalSection: some View {

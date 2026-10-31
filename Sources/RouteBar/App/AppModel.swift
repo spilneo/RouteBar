@@ -47,6 +47,14 @@ final class AppModel {
     var expandedProvider: String?
     /// This Mac's LAN address, set only once OmniRoute answered on it.
     private(set) var lanAddress: String?
+    /// OmniRoute's Cloudflare quick tunnel, tracked while the Internet endpoint is chosen.
+    var tunnel: TunnelStatus?
+    /// The tunnel is being opened or closed.
+    var isChangingTunnel = false
+    /// Why the tunnel did not open, shown in Settings.
+    var tunnelError: String?
+    /// OmniRoute's `REQUIRE_API_KEY`; nil until read. Only read while the endpoint reaches beyond this Mac.
+    var requiresAPIKey: Bool?
 
     var range: UsageRange = .week {
         didSet { Task { await refreshAnalytics() } }
@@ -78,6 +86,9 @@ final class AppModel {
     private var noticeTask: Task<Void, Never>?
     private var lanCheckedAt: Date?
     private var lanCandidate: String?
+    var tunnelCheckedAt: Date?
+    var tunnelOpenAttemptAt: Date?
+    var requiresAPIKeyCheckedAt: Date?
 
     var logURL: URL { process.logURL }
 
@@ -90,10 +101,18 @@ final class AppModel {
 
     var isRemote: Bool { !client.isLocal }
 
-    /// The server root as apps elsewhere should address it.
+    /// The server root as apps should address it. Internet uses the tunnel once it
+    /// is up and the network address until then; Network falls back to `localhost`.
     var serverRoot: URL {
         guard client.isLocal else { return client.baseURL }
-        let host = preferences.endpointHost == .network ? lanAddress ?? "localhost" : "localhost"
+        let host: String
+        switch preferences.endpointHost {
+        case .localhost:
+            host = "localhost"
+        case .network, .tunnel:
+            if preferences.endpointHost == .tunnel, let root = tunnelRoot { return root }
+            host = lanAddress ?? "localhost"
+        }
         return URL(string: "http://\(host):\(OmniRoute.port)")!
     }
 
@@ -131,6 +150,7 @@ final class AppModel {
         quotasFetchedAt = nil
         versionFetchedAt = nil
         modelRefreshedProviders = []
+        resetTunnelState()
         Task { await refresh(panelOpened: true) }
     }
 
@@ -171,9 +191,12 @@ final class AppModel {
             update(\.tiles, to: [])
             update(\.models, to: [])
             update(\.activeRequests, to: 0)
+            update(\.tunnel, to: nil)
             return
         }
         await refreshLANAddress()
+        await refreshTunnel()
+        await refreshRequiresAPIKey(force: panelOpened && showsSettings)
 
         guard await refreshInventory(client: client, generation: generation) else { return }
 
@@ -299,7 +322,7 @@ final class AppModel {
         catalogFetchedAt = nil
     }
 
-    private func isStale(_ date: Date?, after seconds: TimeInterval) -> Bool {
+    func isStale(_ date: Date?, after seconds: TimeInterval) -> Bool {
         date.map { Date().timeIntervalSince($0) > seconds } ?? true
     }
 
@@ -313,7 +336,9 @@ final class AppModel {
             if !Task.isCancelled { self?.notice = nil }
         }
     }
+}
 
+extension AppModel {
     func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)

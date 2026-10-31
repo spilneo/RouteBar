@@ -73,9 +73,16 @@ public struct OmniRouteClient: Sendable {
     }
 
     /// One id per model (`?prefix=alias`) instead of the doubled `dual` catalog.
+    /// Read through the management API, which takes RouteBar's credential, so it
+    /// keeps working when OmniRoute requires an API key on `/v1`. A local server
+    /// too old to have that route falls back to the public `/v1/models`.
     public func models() async throws -> [ModelEntry] {
-        let path = isLocal ? "/v1/models" : "/api/v1/models"
-        return try await get(path, query: [URLQueryItem(name: "prefix", value: "alias")], as: ModelsResponse.self).data
+        let query = [URLQueryItem(name: "prefix", value: "alias")]
+        do {
+            return try await get("/api/v1/models", query: query, as: ModelsResponse.self).data
+        } catch OmniRouteError.http(404, _) where isLocal {
+            return try await get("/v1/models", query: query, as: ModelsResponse.self).data
+        }
     }
 
     /// Asks OmniRoute to fetch a connection's model list from the provider again
@@ -119,6 +126,41 @@ public struct OmniRouteClient: Sendable {
     public func shutdown() async throws {
         _ = try await send(request("/api/shutdown", method: "POST", body: Data("{}".utf8)))
     }
+
+    // MARK: Public tunnel
+
+    /// The Cloudflare quick tunnel's state. The route is loopback-only, so this
+    /// only works for a server on this Mac.
+    public func tunnelStatus() async throws -> TunnelStatus {
+        try await get("/api/tunnels/cloudflared", as: TunnelStatus.self)
+    }
+
+    /// Opens or closes the quick tunnel. Opening waits until Cloudflare hands out
+    /// the address (OmniRoute allows 30 seconds, more when it first downloads
+    /// `cloudflared`), so this call gets a long timeout of its own.
+    @discardableResult
+    public func setTunnel(enabled: Bool) async throws -> TunnelStatus? {
+        let body = try JSONSerialization.data(withJSONObject: ["action": enabled ? "enable" : "disable"])
+        var request = request("/api/tunnels/cloudflared", method: "POST", body: body)
+        request.timeoutInterval = 120
+        return try await JSONDecoder().decode(TunnelActionResponse.self, from: send(request)).status
+    }
+
+    /// Whether OmniRoute's `REQUIRE_API_KEY` flag is on. When it is off, anyone who
+    /// can reach the server, including through a tunnel, can use it without a key.
+    public func requiresAPIKey() async throws -> Bool {
+        let flags = try await get("/api/settings/feature-flags", as: FeatureFlagsResponse.self).flags
+        let value = flags.first { $0.key == Self.requireAPIKeyFlag }?.effectiveValue?.lowercased()
+        return ["true", "1", "yes"].contains(value ?? "")
+    }
+
+    /// Turns `REQUIRE_API_KEY` on or off. It applies to every client, including apps on this Mac.
+    public func setRequiresAPIKey(_ enabled: Bool) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["key": Self.requireAPIKeyFlag, "value": enabled ? "true" : "false"])
+        _ = try await send(request("/api/settings/feature-flags", method: "PUT", body: body))
+    }
+
+    static let requireAPIKeyFlag = "REQUIRE_API_KEY"
 
     /// The credential the server sees: for an access token its name and scope.
     public func whoami() async throws -> WhoAmI {

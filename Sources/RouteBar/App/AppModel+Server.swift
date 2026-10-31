@@ -33,6 +33,12 @@ extension AppModel {
     func stopServer() async {
         server = .stopping
         transitionStarted = Date()
+        // A tunnel left open would point the public address at nothing.
+        if !isRemote, tunnel?.running == true {
+            _ = try? await client.setTunnel(enabled: false)
+            tunnel = nil
+        }
+        tunnelOpenAttemptAt = nil
         // Shutting down through the API also covers an OmniRoute started outside RouteBar.
         do {
             try await client.shutdown()

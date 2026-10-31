@@ -11,14 +11,24 @@ struct RemoteServer: Codable, Equatable {
     var scope: String?
 }
 
-/// How the endpoint is shown for a server on this Mac.
+/// Who the endpoint of a server on this Mac is meant for. Raw values are stored.
 enum EndpointHost: String, CaseIterable, Identifiable {
+    /// `localhost`: apps on this Mac only.
+    case localhost
     /// This Mac's LAN address, so the URL also works from other devices.
     case network
-    case localhost
+    /// A Cloudflare quick tunnel opened by OmniRoute: a public https address.
+    case tunnel
 
     var id: String { rawValue }
-    var label: String { self == .network ? "Network address" : "localhost" }
+
+    var label: String {
+        switch self {
+        case .localhost: "This Mac"
+        case .network: "Network"
+        case .tunnel: "Internet"
+        }
+    }
 }
 
 /// RouteBar's settings, shown on the Settings screen.

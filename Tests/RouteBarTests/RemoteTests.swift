@@ -104,13 +104,59 @@ final class RemoteClientTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requests.first?.headers[CLIToken.header], "machine")
     }
 
-    func testRemoteReadsModelsThroughTheManagementAPI() async throws {
+    func testModelsAreReadThroughTheManagementAPI() async throws {
         let body = #"{"data":[{"id":"cc/opus","owned_by":"claude"}]}"#
         StubProtocol.routes = ["GET /api/v1/models": (200, body), "GET /v1/models": (200, body)]
         _ = try await client("http://10.0.0.5:20128", accessToken: "oma_x").models()
         _ = try await client("http://127.0.0.1:20128").models()
-        XCTAssertEqual(StubProtocol.requests.map(\.path), ["/api/v1/models", "/v1/models"])
+        XCTAssertEqual(StubProtocol.requests.map(\.path), ["/api/v1/models", "/api/v1/models"])
         XCTAssertEqual(StubProtocol.requests.first?.query, "prefix=alias")
+        XCTAssertEqual(StubProtocol.requests.last?.headers[CLIToken.header], "machine", "works when /v1 requires an API key")
+    }
+
+    func testOlderLocalServerFallsBackToPublicModels() async throws {
+        StubProtocol.routes = ["GET /v1/models": (200, #"{"data":[{"id":"cc/opus","owned_by":"claude"}]}"#)]
+        let models = try await client("http://127.0.0.1:20128").models()
+        XCTAssertEqual(models.map(\.id), ["cc/opus"])
+        XCTAssertEqual(StubProtocol.requests.map(\.path), ["/api/v1/models", "/v1/models"])
+    }
+
+    func testTunnelEnableSendsActionAndReadsPublicAddress() async throws {
+        StubProtocol.routes = ["POST /api/tunnels/cloudflared": (200, #"""
+        {"success":true,"action":"enable","status":{"supported":true,"installed":true,"running":true,"pid":1,
+         "publicUrl":"https://abc-def.trycloudflare.com","apiUrl":"https://abc-def.trycloudflare.com/v1",
+         "targetUrl":"http://127.0.0.1:20128","phase":"running","lastError":null}}
+        """#)]
+        let status = try await client("http://127.0.0.1:20128").setTunnel(enabled: true)
+        XCTAssertEqual(status?.phase, .running)
+        XCTAssertEqual(status?.publicRoot?.absoluteString, "https://abc-def.trycloudflare.com")
+        let body = try XCTUnwrap(StubProtocol.requests.first?.body)
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: body) as? [String: String], ["action": "enable"])
+        XCTAssertEqual(StubProtocol.requests.first?.headers[CLIToken.header], "machine")
+    }
+
+    func testTunnelStatusToleratesUnknownPhasesAndHidesStoppedAddresses() throws {
+        let decode = { (json: String) in try JSONDecoder().decode(TunnelStatus.self, from: Data(json.utf8)) }
+        let stopped = try decode(#"{"running":false,"phase":"stopped","publicUrl":"https://old.trycloudflare.com"}"#)
+        XCTAssertNil(stopped.publicRoot, "a stopped tunnel's last address no longer works")
+        XCTAssertEqual(try decode(#"{"running":false,"phase":"rebooting"}"#).phase, .unknown)
+        XCTAssertEqual(try decode(#"{"phase":"not_installed"}"#).phase, .notInstalled)
+        XCTAssertNil(try decode(#"{"running":true,"phase":"running","publicUrl":"http://plain.example"}"#).publicRoot)
+    }
+
+    func testRequireAPIKeyFlag() async throws {
+        StubProtocol.routes = [
+            "GET /api/settings/feature-flags": (
+                200, #"{"flags":[{"key":"OTHER","effectiveValue":"true"},{"key":"REQUIRE_API_KEY","effectiveValue":"false"}]}"#
+            ),
+            "PUT /api/settings/feature-flags": (200, "{}")
+        ]
+        let local = client("http://127.0.0.1:20128")
+        let required = try await local.requiresAPIKey()
+        XCTAssertFalse(required)
+        try await local.setRequiresAPIKey(true)
+        let body = try XCTUnwrap(StubProtocol.requests.last?.body)
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: body) as? [String: String], ["key": "REQUIRE_API_KEY", "value": "true"])
     }
 
     func testMintingSendsPasswordAndReturnsToken() async throws {

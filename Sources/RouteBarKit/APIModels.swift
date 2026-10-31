@@ -188,3 +188,66 @@ public struct MintedToken: Decodable, Sendable {
     public let scope: String?
     public let expiresAt: String?
 }
+
+/// `GET|POST /api/tunnels/cloudflared`: OmniRoute's Cloudflare quick tunnel,
+/// which gives the local server a public `https://….trycloudflare.com` address.
+public struct TunnelStatus: Decodable, Sendable, Equatable {
+    public enum Phase: String, Decodable, Sendable {
+        case unsupported
+        case notInstalled = "not_installed"
+        case stopped
+        case starting
+        case running
+        case error
+        case unknown
+
+        public init(from decoder: Decoder) throws {
+            self = try Phase(rawValue: decoder.singleValueContainer().decode(String.self)) ?? .unknown
+        }
+    }
+
+    public let running: Bool
+    public let phase: Phase
+    public let publicUrl: String?
+    public let lastError: String?
+
+    public init(running: Bool, phase: Phase, publicUrl: String? = nil, lastError: String? = nil) {
+        self.running = running
+        self.phase = phase
+        self.publicUrl = publicUrl
+        self.lastError = lastError
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case running, phase, publicUrl, lastError
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        running = try container.decodeIfPresent(Bool.self, forKey: .running) ?? false
+        phase = try container.decodeIfPresent(Phase.self, forKey: .phase) ?? .unknown
+        publicUrl = try container.decodeIfPresent(String.self, forKey: .publicUrl)
+        lastError = try container.decodeIfPresent(String.self, forKey: .lastError)
+    }
+
+    /// The public server root, only while the tunnel is up and only for an https address.
+    public var publicRoot: URL? {
+        guard running, let publicUrl, let url = URL(string: publicUrl), url.scheme == "https", url.host != nil else { return nil }
+        return url
+    }
+}
+
+/// `POST /api/tunnels/cloudflared` answers with the new status wrapped in `status`.
+struct TunnelActionResponse: Decodable {
+    let status: TunnelStatus?
+}
+
+/// `GET /api/settings/feature-flags`, reduced to what RouteBar reads.
+struct FeatureFlagsResponse: Decodable {
+    struct Flag: Decodable {
+        let key: String
+        let effectiveValue: String?
+    }
+
+    let flags: [Flag]
+}
