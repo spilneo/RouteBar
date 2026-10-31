@@ -1,0 +1,23 @@
+# RouteBar SwiftLint configuration
+
+excluded:
+  - .build
+  - .agent-logs
+  - RouteBar.app
+
+identifier_name:
+  excluded:
+    - id
+    - x
+    - y
+
+line_length:
+  warning: 150
+  error: 200
+
+function_body_length:
+  warning: 80
+  error: 120
+
+nesting:
+  type_level: 2

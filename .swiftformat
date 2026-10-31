@@ -1,0 +1,30 @@
+# RouteBar SwiftFormat configuration
+
+# Toolchain
+--swiftversion 6.0
+
+# Match the existing 4-space indentation
+--indent 4
+
+# Keep grouped numeric literals (e.g. 1_000) and compact lowercase hex masks
+--decimal-grouping 3,3
+--hex-grouping none
+--hex-literal-case lowercase
+
+# Project style: tight ranges (0..<3), inline case patterns, no trailing commas
+--no-space-operators ..<,...
+--pattern-let inline
+--trailing-commas never
+
+# Keep the else brace on the same line as a multiline condition
+--disable wrapMultilineStatementBraces
+
+# Keep explicit self and generic constraints as written
+--disable redundantSelf
+--disable opaqueGenericParameters
+
+# Only strip unused closure arguments, not protocol method parameters
+--strip-unused-args closure-only
+
+# Never format build products or the packaged app
+--exclude .build,RouteBar.app

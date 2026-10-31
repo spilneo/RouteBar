@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test and package
+    runs-on: macos-26
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Show toolchain
+        run: xcrun swift --version
+
+      - name: Run tests
+        run: xcrun swift test
+
+      - name: Build app bundle
+        run: ./scripts/build-app.sh
+
+      - name: Archive app bundle
+        run: ditto -c -k --sequesterRsrc --keepParent RouteBar.app RouteBar.zip
+
+      - name: Upload app bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: RouteBar-macOS
+          path: RouteBar.zip
+          if-no-files-found: error
