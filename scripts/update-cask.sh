@@ -18,6 +18,8 @@ SHA256="$(shasum -a 256 "$WORK/RouteBar.zip" | awk '{print $1}')"
 
 mkdir -p "$(dirname -- "$OUT")"
 cat > "$OUT" <<RUBY
+# frozen_string_literal: true
+
 cask "routebar" do
   version "$VERSION"
   sha256 "$SHA256"
@@ -32,17 +34,17 @@ cask "routebar" do
     strategy :github_latest
   end
 
-  depends_on macos: ">= :sonoma"
   depends_on formula: "node"
+  depends_on macos: ">= :sonoma"
 
   app "RouteBar.app"
 
   # RouteBar is ad-hoc signed, not notarized. Clearing the quarantine flag lets
   # it open on first launch without a Gatekeeper prompt.
-  postflight do
-    system_command "/usr/bin/xattr",
-                   args: ["-dr", "com.apple.quarantine", "#{appdir}/RouteBar.app"],
-                   must_succeed: false
+  postflight_steps do
+    run "/usr/bin/xattr",
+        args:         ["-dr", "com.apple.quarantine", "{{appdir}}/RouteBar.app"],
+        must_succeed: false
   end
 
   uninstall quit: "com.spilneo.RouteBar"

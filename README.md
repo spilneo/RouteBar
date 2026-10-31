@@ -26,8 +26,13 @@ click away.
 ## Install
 
 ```sh
-brew install --cask spilneo/tap/routebar
+brew tap spilneo/tap
+brew trust spilneo/tap
+brew install --cask routebar
 ```
+
+Recent Homebrew versions only load casks from third-party taps you trust, which is what the
+second line does.
 
 RouteBar needs macOS 14 Sonoma or later. Homebrew also installs Node.js, which OmniRoute runs on.
 
