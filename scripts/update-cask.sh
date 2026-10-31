@@ -35,7 +35,7 @@ cask "routebar" do
   end
 
   depends_on formula: "node"
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "RouteBar.app"
 
