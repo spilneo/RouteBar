@@ -61,6 +61,15 @@ final class NetworkAddressTests: XCTestCase {
         ]))
     }
 
+    func testLiveInterfacesAreDottedIPv4() {
+        for interface in NetworkAddress.interfaces() {
+            let octets = interface.address.split(separator: ".")
+            XCTAssertEqual(octets.count, 4, interface.address)
+            XCTAssertTrue(octets.allSatisfy { UInt8($0) != nil }, interface.address)
+            XCTAssertFalse(interface.name.isEmpty)
+        }
+    }
+
     func testPrivateAddressBeatsPublicOnTheSameKind() {
         XCTAssertEqual(NetworkAddress.best(among: [
             Interface(name: "en0", address: "81.2.3.4"),

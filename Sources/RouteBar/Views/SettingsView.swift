@@ -49,12 +49,13 @@ struct SettingsView: View {
     }
 
     @ViewBuilder private var serverSection: some View {
-        Picker("Server", selection: Binding(get: { wantsRemote }, set: selectTarget)) {
+        Picker("Server", selection: $wantsRemote) {
             Text("This Mac").tag(false)
             Text("Remote server").tag(true)
         }
         .pickerStyle(.segmented)
         .labelsHidden()
+        .onChange(of: wantsRemote) { _, remote in selectTarget(remote) }
 
         if !wantsRemote {
             caption("RouteBar starts and stops OmniRoute on this Mac on port \(OmniRoute.port).")
@@ -107,8 +108,8 @@ struct SettingsView: View {
     }
 
     @ViewBuilder private var endpointSection: some View {
-        let preferences = model.preferences
-        Picker("Address", selection: Binding(get: { preferences.endpointHost }, set: { preferences.endpointHost = $0 })) {
+        @Bindable var preferences = model.preferences
+        Picker("Address", selection: $preferences.endpointHost) {
             ForEach(EndpointHost.allCases) { Text($0.label).tag($0) }
         }
         .pickerStyle(.segmented)
@@ -126,9 +127,9 @@ struct SettingsView: View {
     }
 
     @ViewBuilder private var generalSection: some View {
-        let preferences = model.preferences
+        @Bindable var preferences = model.preferences
         row("Import logins automatically", detail: "Connect AI tools signed in on this Mac") {
-            Toggle("Import logins automatically", isOn: Binding(get: { preferences.autoImport }, set: { preferences.autoImport = $0 }))
+            Toggle("Import logins automatically", isOn: $preferences.autoImport)
                 .switchStyle()
         }
         Divider().opacity(0.5)
@@ -156,7 +157,6 @@ struct SettingsView: View {
     }
 
     private func selectTarget(_ remote: Bool) {
-        wantsRemote = remote
         editingRemote = false
         if !remote {
             model.useRemote(false)

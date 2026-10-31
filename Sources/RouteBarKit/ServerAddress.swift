@@ -111,7 +111,8 @@ public enum NetworkAddress {
             var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
             guard getnameinfo(address, socklen_t(address.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0
             else { continue }
-            found.append(Interface(name: String(cString: entry.ifa_name), address: String(cString: host)))
+            guard let numeric = String(bytes: host.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, encoding: .utf8) else { continue }
+            found.append(Interface(name: String(cString: entry.ifa_name), address: numeric))
         }
         return found
     }
