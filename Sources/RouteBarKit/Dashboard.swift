@@ -6,11 +6,14 @@ public struct ProviderTile: Identifiable, Sendable, Equatable {
     public let name: String
     /// At least one connection for this provider is enabled and healthy.
     public let isActive: Bool
+    /// Subscription windows, busiest value across the provider's connections.
+    public let quotas: [QuotaWindow]
 
-    public init(id: String, name: String, isActive: Bool) {
+    public init(id: String, name: String, isActive: Bool, quotas: [QuotaWindow] = []) {
         self.id = id
         self.name = name
         self.isActive = isActive
+        self.quotas = quotas
     }
 }
 
@@ -30,17 +33,30 @@ public struct UsagePoint: Identifiable, Sendable, Equatable {
 
 /// Pure transformations from OmniRoute responses to what the panel renders.
 public enum Dashboard {
-    /// Groups connections by provider, keeping first-seen order and naming each
-    /// provider from the catalog when it knows the id.
-    public static func tiles(connections: [Connection], catalog: [String: CatalogProvider]) -> [ProviderTile] {
+    /// Groups connections by provider, keeping first-seen order, naming each
+    /// provider from the catalog and attaching quotas of its usable connections.
+    public static func tiles(
+        connections: [Connection],
+        catalog: [String: CatalogProvider],
+        quotas: [String: [QuotaWindow]] = [:]
+    ) -> [ProviderTile] {
         var order: [String] = []
         var active: [String: Bool] = [:]
+        var windows: [String: [[QuotaWindow]]] = [:]
         for connection in connections where !connection.provider.isEmpty {
             if active[connection.provider] == nil { order.append(connection.provider) }
             active[connection.provider] = (active[connection.provider] ?? false) || connection.isUsable
+            if connection.isUsable, let id = connection.id, let list = quotas[id] {
+                windows[connection.provider, default: []].append(list)
+            }
         }
         return order.map { id in
-            ProviderTile(id: id, name: displayName(for: id, catalog: catalog), isActive: active[id] ?? false)
+            ProviderTile(
+                id: id,
+                name: displayName(for: id, catalog: catalog),
+                isActive: active[id] ?? false,
+                quotas: Quotas.merge(windows[id] ?? [])
+            )
         }
     }
 
@@ -118,5 +134,14 @@ public enum Dashboard {
             return (text.hasSuffix(".0") ? String(text.dropLast(2)) : text) + suffix
         }
         return String(value)
+    }
+
+    /// Time left until a moment, in its two largest units: "2d 7h", "4h 6m", "12m".
+    public static func countdown(to date: Date, now: Date = Date()) -> String {
+        let seconds = max(Int(date.timeIntervalSince(now)), 0)
+        let days = seconds / 86_400, hours = seconds % 86_400 / 3_600, minutes = seconds % 3_600 / 60
+        if days > 0 { return "\(days)d \(hours)h" }
+        if hours > 0 { return "\(hours)h \(minutes)m" }
+        return "\(minutes)m"
     }
 }

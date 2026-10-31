@@ -6,7 +6,7 @@ import SwiftUI
 /// Collapsed to the search field until it is focused, so the panel stays short.
 /// The list also stays open while it holds a query or the pointer is over it,
 /// so clicking a row to copy it never collapses the list under the cursor.
-struct ModelList: View {
+struct ModelSearchView: View {
     @Bindable var model: AppModel
     @State private var query = ""
     @State private var copiedID: String?
@@ -102,7 +102,7 @@ struct ModelList: View {
         .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(searchFocused ? Color.accentColor.opacity(0.6) : .clear, lineWidth: 1)
+                .strokeBorder(searchFocused ? Theme.accent.opacity(0.6) : .clear, lineWidth: 1)
         )
         .help("Press Return to copy the first result")
     }

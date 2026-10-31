@@ -54,7 +54,7 @@ RouteBar needs macOS 14 Sonoma or later. Homebrew also installs Node.js, which O
    | Zed           | the macOS Keychain, only when you ask (see below)          |
 
    Imports never overwrite a connection. Zed keeps its keys in the Keychain behind a macOS
-   prompt, so it is only read when you choose **Import Logins Now** from the `⋯` menu, which
+   prompt, so it is only read when you click the import button in the footer, which
    also catches tools you signed in to after launch. OpenCode is not listed because OmniRoute
    has no importer for its logins yet.
 4. Copy the endpoint and paste it into any OpenAI-compatible app.
@@ -65,16 +65,17 @@ curl http://localhost:20128/v1/models
 
 ## The panel
 
-| Section       | What it does                                                                                          |
+| Section       | What it shows                                                                                         |
 | ------------- | ----------------------------------------------------------------------------------------------------- |
-| **Endpoint**  | Shows the base URL with its status. Copy it with one click, or switch the endpoint off and on.        |
-| **Usage**     | Tokens and requests for the last 7 or 30 days. Hover a bar to see that day.                           |
-| **Providers** | Every connected provider as a tile with its logo. Dimmed tiles have no working connection.            |
+| **Header**    | Whether the endpoint is running and how many requests it is serving right now, the OmniRoute version (with a note when an update is out), a button to the full dashboard, and the on/off switch. |
+| **Endpoint**  | The base URL for your apps, with a copy button.                                                       |
+| **Usage**     | Tokens and requests over 7 or 30 days. Hover a bar to see that day.                                   |
+| **Providers** | Each connected provider with its logo and live subscription limits, such as Claude's 5-hour and weekly windows. Meters turn orange at 80% and red at 95%, and show when each window resets. |
 | **Models**    | Only the models your active providers serve. The list unfolds when you click into search or start typing. Click a row to copy it, press Return to copy the top match, or Esc to fold it away. |
-| **`⋯` menu**  | Open at Login, automatic login import, Import Logins Now, the OmniRoute log, and Quit.                 |
+| **Footer**    | Icon buttons, each explained on hover: import logins now, automatic import, open at login, show the OmniRoute log, and quit. Toggles are tinted when on. |
 
-**Open Dashboard** takes you to the full OmniRoute dashboard for everything else, such as
-adding providers, combos, API keys and routing rules.
+The full OmniRoute dashboard is one click away for everything else, such as adding providers,
+combos, API keys and routing rules.
 
 ## How it works
 

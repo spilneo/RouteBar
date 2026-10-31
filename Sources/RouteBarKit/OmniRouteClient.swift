@@ -63,6 +63,28 @@ public struct OmniRouteClient: Sendable {
         try await get("/api/usage/analytics", query: [URLQueryItem(name: "range", value: range)], as: Analytics.self)
     }
 
+    /// Subscription limit windows for one connection. OmniRoute asks the
+    /// provider for these, so callers should poll them sparingly.
+    public func quotas(connectionID: String) async throws -> [QuotaWindow] {
+        guard let id = connectionID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return [] }
+        return try await Quotas.parse(send(request("/api/usage/\(id)")))
+    }
+
+    public func version() async throws -> ServerVersion {
+        try await get("/api/system/version", as: ServerVersion.self)
+    }
+
+    /// Requests OmniRoute is serving right now.
+    public func activeRequests() async throws -> Int {
+        let data = try await send(request("/api/usage/history"))
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        switch object?["activeRequests"] {
+        case let list as [Any]: return list.count
+        case let count as NSNumber: return count.intValue
+        default: return 0
+        }
+    }
+
     /// Asks OmniRoute to exit, whoever started it.
     public func shutdown() async throws {
         _ = try await send(request("/api/shutdown", method: "POST", body: Data("{}".utf8)))

@@ -3,14 +3,9 @@ import RouteBarKit
 import SwiftUI
 
 /// Daily token traffic with a headline figure. Hovering a bar shows that day.
-struct UsageCard: View {
+struct UsageView: View {
     @Bindable var model: AppModel
     @State private var selectedDate: Date?
-
-    private static let gradient = LinearGradient(
-        colors: [Color(red: 0.55, green: 0.36, blue: 1), Color(red: 0.13, green: 0.76, blue: 1)],
-        startPoint: .top, endPoint: .bottom
-    )
 
     private var selected: UsagePoint? {
         guard let selectedDate else { return nil }
@@ -25,35 +20,28 @@ struct UsageCard: View {
     private var hasTraffic: Bool { model.usage.contains { $0.tokens > 0 || $0.requests > 0 } }
 
     var body: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(alignment: .firstTextBaseline, spacing: 4) {
-                            Text(Dashboard.compact(totals.tokens))
-                                .font(.system(size: 22, weight: .semibold, design: .rounded))
-                                .contentTransition(.numericText())
-                            Text("tokens")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
-                        }
-                        Text(detail)
-                            .font(.system(size: 11))
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text(Dashboard.compact(totals.tokens))
+                            .font(.system(size: 22, weight: .semibold, design: .rounded))
+                            .contentTransition(.numericText())
+                        Text("tokens")
+                            .font(.system(size: 12))
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
                     }
-                    Spacer(minLength: 8)
-                    Picker("Range", selection: $model.range) {
-                        ForEach(UsageRange.allCases) { Text($0.label).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .controlSize(.mini)
-                    .frame(width: 84)
+                    Text(detail)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-                chart
+                Spacer(minLength: 8)
+                RangeSwitch(selection: $model.range)
             }
+            chart
         }
+        .surface()
     }
 
     private var detail: String {
@@ -74,7 +62,7 @@ struct UsageCard: View {
                 x: .value("Day", point.date, unit: .day),
                 y: .value("Tokens", hasTraffic ? point.tokens : 1)
             )
-            .foregroundStyle(hasTraffic ? AnyShapeStyle(Self.gradient) : AnyShapeStyle(.primary.opacity(0.07)))
+            .foregroundStyle(hasTraffic ? Theme.accent : Color.primary.opacity(0.07))
             .opacity(selected == nil || selected?.date == point.date ? 1 : 0.35)
             .clipShape(RoundedRectangle(cornerRadius: model.usage.count > 10 ? 2 : 4, style: .continuous))
         }
@@ -87,7 +75,7 @@ struct UsageCard: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .frame(height: 64)
+        .frame(height: 56)
         .overlay {
             if !hasTraffic {
                 Text(model.server == .running ? "No traffic yet" : "Endpoint is off")
@@ -97,5 +85,36 @@ struct UsageCard: View {
             }
         }
         .animation(.snappy, value: model.usage)
+    }
+}
+
+/// Two-option switch: the chosen range sits on a soft pill, the other stays quiet.
+struct RangeSwitch: View {
+    @Binding var selection: UsageRange
+    @Namespace private var pill
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(UsageRange.allCases) { range in
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) { selection = range }
+                } label: {
+                    Text(range.label)
+                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(selection == range ? Color.primary : Color.secondary)
+                        .frame(width: 34, height: 20)
+                        .background {
+                            if selection == range {
+                                Capsule().fill(.primary.opacity(0.1)).matchedGeometryEffect(id: "pill", in: pill)
+                            }
+                        }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help(range == .week ? "Last 7 days" : "Last 30 days")
+            }
+        }
+        .padding(2)
+        .background(.primary.opacity(0.04), in: Capsule())
     }
 }
