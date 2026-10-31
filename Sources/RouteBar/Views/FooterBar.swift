@@ -6,6 +6,8 @@ import SwiftUI
 struct FooterBar: View {
     @Bindable var model: AppModel
 
+    static let repositoryURL = URL(string: "https://github.com/spilneo/RouteBar")!
+
     var body: some View {
         // The faint name and version sit centred in the footer's own height,
         // so screenshots say what the app is without making the panel taller.
@@ -36,6 +38,10 @@ struct FooterBar: View {
             .keyboardShortcut(",")
 
             Spacer()
+
+            IconButton(systemImage: "chevron.left.forwardslash.chevron.right", help: "RouteBar on GitHub") {
+                model.open(Self.repositoryURL)
+            }
 
             IconButton(systemImage: "rectangle.portrait.and.arrow.right", help: "Quit RouteBar") {
                 NSApp.terminate(nil)

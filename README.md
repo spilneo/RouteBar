@@ -74,13 +74,13 @@ curl http://localhost:20128/v1/models
 | **Usage**     | Tokens and requests over 7 or 30 days. Hover a bar to see that day.                                   |
 | **Providers** | Each connected provider with its logo and live subscription limits, shortest window on top, such as Claude's 5-hour window above the weekly one. Meters turn orange at 80% and red at 95%, and show when each window resets. A provider with several accounts shows how many, and its meters follow the busiest account. Click a tile to see every account with its own limits. More than eight providers scroll. |
 | **Models**    | Only the models your active providers serve. Click the search bar to unfold the list inside it; nothing is focused until you do. Type to filter, use the arrow keys and Return to copy, click a row to copy it, or press Esc to fold it away. The refresh button asks every active provider for its current models, which picks up new releases. Each provider is also refreshed once automatically when RouteBar first sees it. |
-| **Footer**    | Icon buttons, each explained on hover: import logins now, show the OmniRoute log, Settings, and quit. A faint RouteBar mark with the version sits between them. |
+| **Footer**    | Icon buttons, each explained on hover: import logins now, show the OmniRoute log, Settings, RouteBar on GitHub, and quit. A faint RouteBar mark with the version sits between them. |
 
 ## Settings
 
 The gear opens Settings in the panel.
 
-- **Appearance.** Pick the accent colour from eight presets, and turn the translucent panel off
+- **Appearance.** Pick the accent colour from eight presets (teal by default), and turn the translucent panel off
   for a solid background.
 - **Server.** Manage the OmniRoute on this Mac or one on another machine (see below).
 - **Endpoint.** Show the network address or `localhost`.

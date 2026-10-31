@@ -9,7 +9,7 @@ import SwiftUI
 @MainActor
 @Observable
 final class Appearance {
-    /// Flat accent presets. Indigo is the brand colour of the app icon (`logo.svg`).
+    /// Flat accent presets. Teal is the default; indigo is the colour of the app icon (`logo.svg`).
     enum Accent: String, CaseIterable, Identifiable {
         case indigo, blue, teal, green, orange, pink, red, graphite
 
@@ -51,7 +51,7 @@ final class Appearance {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [Keys.translucent: true])
-        accent = defaults.string(forKey: Keys.accent).flatMap(Accent.init(rawValue:)) ?? .indigo
+        accent = defaults.string(forKey: Keys.accent).flatMap(Accent.init(rawValue:)) ?? .teal
         isTranslucent = defaults.bool(forKey: Keys.translucent)
     }
 }
