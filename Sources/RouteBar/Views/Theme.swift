@@ -123,3 +123,96 @@ struct NoticeBar: View {
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 }
+
+/// Flat, rounded text buttons that match the panel instead of the stock bezel.
+///
+/// `.prominent` is filled with the accent for the one action that moves things
+/// forward, `.secondary` is a quiet tinted fill, and `.destructive` uses red.
+struct PanelButtonStyle: ButtonStyle {
+    enum Kind { case prominent, secondary, destructive }
+
+    var kind: Kind = .secondary
+
+    func makeBody(configuration: Configuration) -> some View {
+        StyledLabel(configuration: configuration, kind: kind)
+    }
+
+    private struct StyledLabel: View {
+        let configuration: Configuration
+        let kind: Kind
+        @Environment(\.isEnabled) private var isEnabled
+        @State private var hovering = false
+
+        var body: some View {
+            configuration.label
+                .font(.system(size: 11.5, weight: kind == .prominent ? .semibold : .medium))
+                .lineLimit(1)
+                .foregroundStyle(foreground)
+                .padding(.horizontal, 10)
+                .frame(minWidth: 56, minHeight: 24)
+                .background(fill, in: shape)
+                .overlay(shape.strokeBorder(border))
+                .contentShape(shape)
+                .opacity(isEnabled ? 1 : 0.45)
+                .scaleEffect(configuration.isPressed ? 0.97 : 1)
+                .animation(.snappy(duration: 0.12), value: configuration.isPressed)
+                .animation(.snappy(duration: 0.12), value: hovering)
+                .onHover { hovering = $0 && isEnabled }
+        }
+
+        private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 7, style: .continuous) }
+
+        private var tint: Color { kind == .destructive ? .red : Theme.accent }
+
+        private var foreground: Color {
+            switch kind {
+            case .prominent: .white
+            case .secondary: .primary
+            case .destructive: .red
+            }
+        }
+
+        private var fill: Color {
+            let boost = configuration.isPressed ? 0.12 : hovering ? 0.06 : 0
+            switch kind {
+            case .prominent: return tint.opacity(configuration.isPressed ? 0.8 : hovering ? 0.9 : 1)
+            case .secondary: return Color.primary.opacity(0.07 + boost)
+            case .destructive: return Color.red.opacity(0.1 + boost)
+            }
+        }
+
+        private var border: Color {
+            kind == .prominent ? .clear : Color.primary.opacity(0.08)
+        }
+    }
+}
+
+extension ButtonStyle where Self == PanelButtonStyle {
+    static var panel: PanelButtonStyle { PanelButtonStyle() }
+    static func panel(_ kind: PanelButtonStyle.Kind) -> PanelButtonStyle { PanelButtonStyle(kind: kind) }
+}
+
+/// A labelled "‹ Back" control for screens shown in place of the panel.
+struct BackButton: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold))
+                Text("Back").font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(Theme.accent)
+            .padding(.leading, 6)
+            .padding(.trailing, 9)
+            .frame(height: 26)
+            .background(Theme.accent.opacity(hovering ? 0.16 : 0.1), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Back to RouteBar (Esc)")
+        .accessibilityLabel("Back")
+    }
+}

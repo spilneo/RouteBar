@@ -74,7 +74,7 @@ extension AppModel {
             server = .running
             problem = "OmniRoute is still running."
         default:
-            server = online ? .running : .stopped
+            update(\.server, to: online ? .running : .stopped)
         }
     }
 }

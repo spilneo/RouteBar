@@ -38,14 +38,17 @@ struct SettingsView: View {
     // MARK: Sections
 
     private var header: some View {
-        HStack(spacing: 6) {
-            IconButton(systemImage: "chevron.left", help: "Back") {
-                withAnimation(.snappy(duration: 0.22)) { model.showsSettings = false }
-            }
-            .keyboardShortcut(.cancelAction)
+        ZStack {
             Text("Settings").font(.system(size: 13, weight: .semibold))
-            Spacer()
+            HStack {
+                BackButton {
+                    withAnimation(.snappy(duration: 0.22)) { model.showsSettings = false }
+                }
+                .keyboardShortcut(.cancelAction)
+                Spacer()
+            }
         }
+        .frame(height: 28)
     }
 
     @ViewBuilder private var serverSection: some View {
@@ -87,13 +90,14 @@ struct SettingsView: View {
             }
             HStack(spacing: 6) {
                 Spacer()
-                Button("Sign In Again") { editingRemote = true }.controlSize(.small)
                 Button("Forget") {
                     model.forgetRemote()
                     wantsRemote = false
                 }
-                .controlSize(.small)
+                .buttonStyle(.panel(.destructive))
                 .help("Return to this Mac and remove the access token from the Keychain")
+                Button("Sign In Again") { editingRemote = true }
+                    .buttonStyle(.panel)
             }
             caption("Status, usage, providers and models come from this server. Stopping it works from here, "
                 + "starting it has to happen on that machine.")
@@ -273,11 +277,12 @@ struct RemoteSignInForm: View {
 
             HStack {
                 Spacer()
-                Button("Cancel", action: onCancel).controlSize(.small)
+                Button("Cancel", action: onCancel)
+                    .buttonStyle(.panel)
                 Button(action: connect) {
-                    if isConnecting { ProgressView().controlSize(.mini) } else { Text("Connect") }
+                    if isConnecting { ProgressView().controlSize(.mini).tint(.white) } else { Text("Connect") }
                 }
-                .controlSize(.small)
+                .buttonStyle(.panel(.prominent))
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canConnect)
             }

@@ -12,18 +12,42 @@ struct PanelView: View {
         self.model = model
     }
 
+    /// Last measured height of the content. Kept between openings so the panel
+    /// opens at its previous size instead of a guess.
+    @State private var contentHeight: CGFloat = 480
+
+    /// Tall content scrolls instead of running off the bottom of the screen.
+    private var maxHeight: CGFloat {
+        max(320, (NSScreen.main?.visibleFrame.height ?? 800) - 24)
+    }
+
+    private var height: CGFloat { min(contentHeight, maxHeight) }
+
     var body: some View {
-        Group {
-            if model.showsSettings {
-                SettingsView(model: model)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-            } else {
-                dashboard
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+        ScrollView(.vertical) {
+            // One container for both screens, pinned to the top, so the panel
+            // modifiers below apply once rather than to each screen separately.
+            ZStack(alignment: .top) {
+                if model.showsSettings {
+                    SettingsView(model: model)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                } else {
+                    dashboard
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                }
+            }
+            .padding(12)
+            .frame(width: Theme.width)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { measured in
+                if abs(measured - contentHeight) > 0.5 { contentHeight = measured }
             }
         }
-        .padding(12)
-        .frame(width: Theme.width)
+        .scrollDisabled(contentHeight <= maxHeight)
+        .scrollIndicators(.automatic)
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(width: Theme.width, height: height)
+        .clipped()
+        .background(PanelWindowHeight(height: height))
         .background {
             if !appearance.isTranslucent {
                 Color(nsColor: .windowBackgroundColor).padding(-40)

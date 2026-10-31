@@ -163,9 +163,9 @@ final class AppModel {
         guard generation == self.generation else { return }
         updateServerState(online: online)
         guard online else {
-            tiles = []
-            models = []
-            activeRequests = 0
+            update(\.tiles, to: [])
+            update(\.models, to: [])
+            update(\.activeRequests, to: 0)
             return
         }
         await refreshLANAddress()
@@ -174,14 +174,14 @@ final class AppModel {
 
         let requests = await (try? client.activeRequests()) ?? 0
         guard generation == self.generation else { return }
-        activeRequests = requests
+        update(\.activeRequests, to: requests)
         await refreshAnalytics()
         // Quotas come from the providers themselves, so they are polled sparingly.
         if isStale(quotasFetchedAt, after: panelOpened ? 30 : 90) { await refreshQuotas() }
         if isStale(versionFetchedAt, after: 600) {
             let fetched = try? await client.version()
             guard generation == self.generation else { return }
-            version = fetched
+            update(\.version, to: fetched)
             versionFetchedAt = Date()
         }
     }
@@ -193,7 +193,7 @@ final class AppModel {
                 // A remote access token may not read the catalog; names then fall back to built-ins.
                 let fetched = await (try? client.catalog()) ?? catalog
                 guard generation == self.generation else { return false }
-                catalog = fetched
+                update(\.catalog, to: fetched)
                 catalogFetchedAt = Date()
             }
             let fetched = try await client.connections()
@@ -201,13 +201,13 @@ final class AppModel {
             guard generation == self.generation else { return false }
             connections = fetched
             let active = Set(fetched.filter(\.isUsable).map(\.provider))
-            models = Dashboard.models(entries, activeProviders: active, catalog: catalog)
+            update(\.models, to: Dashboard.models(entries, activeProviders: active, catalog: catalog))
             rebuildTiles()
-            problem = nil
+            update(\.problem, to: nil)
             if !isRemote, preferences.autoImport, !importedThisSession { await importLogins(includeInteractive: false) }
         } catch {
             guard generation == self.generation else { return false }
-            problem = error.localizedDescription
+            update(\.problem, to: error.localizedDescription)
         }
         return generation == self.generation
     }
@@ -221,19 +221,19 @@ final class AppModel {
         lanCandidate = candidate
         lanCheckedAt = Date()
         guard let candidate, let url = URL(string: "http://\(candidate):\(OmniRoute.port)") else {
-            lanAddress = nil
+            update(\.lanAddress, to: nil)
             return
         }
         let reachable = await OmniRouteClient(baseURL: url, cliToken: nil, timeout: 1.5).isOnline()
-        lanAddress = reachable ? candidate : nil
+        update(\.lanAddress, to: reachable ? candidate : nil)
     }
 
     func refreshAnalytics() async {
         let client = client, generation = generation
         guard server == .running, let analytics = try? await client.analytics(range: range.rawValue),
               generation == self.generation else { return }
-        summary = analytics.summary
-        usage = Dashboard.series(analytics.dailyTrend ?? [], days: range.days)
+        update(\.summary, to: analytics.summary)
+        update(\.usage, to: Dashboard.series(analytics.dailyTrend ?? [], days: range.days))
     }
 
     private func refreshQuotas() async {
@@ -256,7 +256,14 @@ final class AppModel {
     }
 
     private func rebuildTiles() {
-        tiles = Dashboard.tiles(connections: connections, catalog: catalog, quotas: quotas)
+        update(\.tiles, to: Dashboard.tiles(connections: connections, catalog: catalog, quotas: quotas))
+    }
+
+    /// Observation redraws every view that read a property on each assignment,
+    /// even an equal one. The poll re-assigns mostly unchanged data every two
+    /// seconds, so only real changes are written.
+    func update<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<AppModel, Value>, to value: Value) {
+        if self[keyPath: keyPath] != value { self[keyPath: keyPath] = value }
     }
 
     #if DEBUG
