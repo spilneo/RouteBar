@@ -72,9 +72,9 @@ curl http://localhost:20128/v1/models
 | **Header**    | Whether the endpoint is running and how many requests it is serving right now, the OmniRoute version (with a note when an update is out), a button to the full dashboard, and the on/off switch. |
 | **Endpoint**  | The base URL for your apps, with a copy button. The network address by default, `localhost` on request. |
 | **Usage**     | Tokens and requests over 7 or 30 days. Hover a bar to see that day.                                   |
-| **Providers** | Each connected provider with its logo and live subscription limits, such as Claude's 5-hour and weekly windows. Meters turn orange at 80% and red at 95%, and show when each window resets. A provider with several accounts shows how many, and its meters follow the busiest account. Click a tile to see every account with its own limits. More than eight providers scroll. |
-| **Models**    | Only the models your active providers serve. The list unfolds when you click into search or start typing. Click a row to copy it, press Return to copy the top match, or Esc to fold it away. |
-| **Footer**    | Icon buttons, each explained on hover: import logins now, show the OmniRoute log, Settings, and quit. |
+| **Providers** | Each connected provider with its logo and live subscription limits, shortest window on top, such as Claude's 5-hour window above the weekly one. Meters turn orange at 80% and red at 95%, and show when each window resets. A provider with several accounts shows how many, and its meters follow the busiest account. Click a tile to see every account with its own limits. More than eight providers scroll. |
+| **Models**    | Only the models your active providers serve. Click the search bar to unfold the list inside it; nothing is focused until you do. Type to filter, use the arrow keys and Return to copy, click a row to copy it, or press Esc to fold it away. The refresh button asks every active provider for its current models, which picks up new releases. Each provider is also refreshed once automatically when RouteBar first sees it. |
+| **Footer**    | Icon buttons, each explained on hover: import logins now, show the OmniRoute log, Settings, and quit. A faint RouteBar mark with the version sits between them. |
 
 ## Settings
 

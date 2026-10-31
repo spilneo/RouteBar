@@ -78,6 +78,17 @@ public struct OmniRouteClient: Sendable {
         return try await get(path, query: [URLQueryItem(name: "prefix", value: "alias")], as: ModelsResponse.self).data
     }
 
+    /// Asks OmniRoute to fetch a connection's model list from the provider again
+    /// and keep it, which picks up models released since the connection was added.
+    /// The same call as "Import from /models" in the dashboard. Returns how many models it found.
+    @discardableResult
+    public func refreshModels(connectionID: String) async throws -> Int {
+        guard let id = connectionID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return 0 }
+        let data = try await send(request("/api/providers/\(id)/models", query: [URLQueryItem(name: "refresh", value: "true")]))
+        let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        return (object?["models"] as? [Any])?.count ?? 0
+    }
+
     public func analytics(range: String) async throws -> Analytics {
         try await get("/api/usage/analytics", query: [URLQueryItem(name: "range", value: range)], as: Analytics.self)
     }

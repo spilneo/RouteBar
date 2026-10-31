@@ -18,18 +18,18 @@ struct SettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
-            section("Appearance") {
+            section("Appearance", icon: "paintpalette") {
                 row("Accent") { AccentPicker(selection: $appearance.accent) }
                 Divider().opacity(0.5)
                 row("Translucent panel", detail: "Off uses a solid background") {
                     Toggle("Translucent panel", isOn: $appearance.isTranslucent).switchStyle()
                 }
             }
-            section("Server") { serverSection }
+            section("Server", icon: "server.rack") { serverSection }
             if !model.isRemote {
-                section("Endpoint") { endpointSection }
+                section("Endpoint", icon: "link") { endpointSection }
             }
-            section("General") { generalSection }
+            section("General", icon: "gearshape") { generalSection }
             footer
         }
         .onAppear { wantsRemote = model.preferences.usesRemote }
@@ -52,13 +52,8 @@ struct SettingsView: View {
     }
 
     @ViewBuilder private var serverSection: some View {
-        Picker("Server", selection: $wantsRemote) {
-            Text("This Mac").tag(false)
-            Text("Remote server").tag(true)
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .onChange(of: wantsRemote) { _, remote in selectTarget(remote) }
+        SegmentedPicker(selection: $wantsRemote, options: [(false, "This Mac"), (true, "Remote server")])
+            .onChange(of: wantsRemote) { _, remote in selectTarget(remote) }
 
         if !wantsRemote {
             caption("RouteBar starts and stops OmniRoute on this Mac on port \(OmniRoute.port).")
@@ -113,11 +108,7 @@ struct SettingsView: View {
 
     @ViewBuilder private var endpointSection: some View {
         @Bindable var preferences = model.preferences
-        Picker("Address", selection: $preferences.endpointHost) {
-            ForEach(EndpointHost.allCases) { Text($0.label).tag($0) }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
+        SegmentedPicker(selection: $preferences.endpointHost, options: EndpointHost.allCases.map { ($0, $0.label) })
         caption(endpointCaption)
     }
 
@@ -147,17 +138,14 @@ struct SettingsView: View {
     }
 
     private var footer: some View {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-        return HStack {
-            Text(version.map { "RouteBar \($0)" } ?? "RouteBar")
-            Spacer()
+        VStack(spacing: 8) {
             if let message = model.notice ?? model.problem {
-                Text(message).lineLimit(1).truncationMode(.tail)
+                NoticeBar(message: message, isProblem: model.notice == nil)
             }
+            BrandMark(opacity: 0.38)
+                .frame(maxWidth: .infinity)
         }
-        .font(.system(size: 10.5))
-        .foregroundStyle(.tertiary)
-        .padding(.horizontal, 4)
+        .padding(.top, 2)
     }
 
     private func selectTarget(_ remote: Bool) {
@@ -171,13 +159,18 @@ struct SettingsView: View {
 
     // MARK: Building blocks
 
-    private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
+    private func section(_ title: String, icon: String, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(.leading, 4)
-            VStack(alignment: .leading, spacing: 8) { content() }
+            Label {
+                Text(title.uppercased()).tracking(0.4)
+            } icon: {
+                Image(systemName: icon).foregroundStyle(Theme.accent)
+            }
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .labelStyle(SectionLabelStyle())
+            .padding(.leading, 4)
+            VStack(alignment: .leading, spacing: 10) { content() }
                 .surface(padding: 10)
         }
     }
@@ -260,11 +253,7 @@ struct RemoteSignInForm: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             field("Host or URL, e.g. 192.168.1.20", text: $address, secure: false)
-            Picker("Sign in with", selection: $method) {
-                ForEach(Method.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            SegmentedPicker(selection: $method, options: Method.allCases.map { ($0, $0.rawValue) })
             field(method == .password ? "Management password" : "oma_… access token", text: $secret, secure: true)
                 .onSubmit(connect)
 
@@ -303,14 +292,7 @@ struct RemoteSignInForm: View {
     }
 
     private func field(_ prompt: String, text: Binding<String>, secure: Bool) -> some View {
-        Group {
-            if secure { SecureField(prompt, text: text) } else { TextField(prompt, text: text) }
-        }
-        .textFieldStyle(.plain)
-        .font(.system(size: 12, design: secure ? .default : .monospaced))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        PanelTextField(prompt: prompt, text: text, secure: secure)
     }
 
     private func connect() {
@@ -331,8 +313,43 @@ struct RemoteSignInForm: View {
     }
 }
 
+@MainActor
 private extension Toggle {
     func switchStyle() -> some View {
-        toggleStyle(.switch).labelsHidden().controlSize(.mini)
+        toggleStyle(.panelSwitch).labelsHidden()
     }
+}
+
+/// A small tinted icon before a section title.
+private struct SectionLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 5) {
+            configuration.icon.font(.system(size: 9.5, weight: .semibold))
+            configuration.title
+        }
+    }
+}
+
+/// A flat text field whose border takes the accent colour while it is focused.
+struct PanelTextField: View {
+    let prompt: String
+    @Binding var text: String
+    var secure = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        Group {
+            if secure { SecureField(prompt, text: $text) } else { TextField(prompt, text: $text) }
+        }
+        .textFieldStyle(.plain)
+        .font(.system(size: 12, design: secure ? .default : .monospaced))
+        .focused($focused)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(.primary.opacity(focused ? 0.075 : 0.055), in: shape)
+        .overlay(shape.strokeBorder(focused ? Theme.accent.opacity(0.6) : .primary.opacity(0.07)))
+        .animation(.snappy(duration: 0.15), value: focused)
+    }
+
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 7, style: .continuous) }
 }

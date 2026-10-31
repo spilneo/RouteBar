@@ -46,7 +46,10 @@ struct IconButton: View {
     let help: String
     var isOn: Bool?
     var isBusy = false
+    /// Side of the square hit area. Smaller sizes fit inside fields.
+    var size: CGFloat = 28
     let action: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
     @State private var hovering = false
 
     var body: some View {
@@ -56,17 +59,17 @@ struct IconButton: View {
                     ProgressView().controlSize(.mini)
                 } else {
                     Image(systemName: systemImage)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: size * 0.46, weight: .medium))
                         .symbolVariant(isOn == true ? .fill : .none)
                 }
             }
             .foregroundStyle(isOn == true ? Theme.accent : Color.secondary)
-            .frame(width: 28, height: 28)
-            .background(background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .frame(width: size, height: size)
+            .background(background, in: RoundedRectangle(cornerRadius: size * 0.29, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: size * 0.29))
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .onHover { hovering = $0 && isEnabled }
         .help(help)
         .accessibilityLabel(help)
     }

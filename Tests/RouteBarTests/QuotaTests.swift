@@ -44,6 +44,37 @@ final class QuotaTests: XCTestCase {
         XCTAssertEqual(merged.map(\.usedPercent), [40, 90])
     }
 
+    func testShortestWindowComesFirstWhateverTheResetTimes() {
+        // An idle session reports no reset time, and a monthly window can reset first.
+        let data = Data(#"""
+        {"quotas":{
+          "monthly (30d)":{"used":5,"total":100,"resetAt":"2026-11-01T00:00:00Z"},
+          "weekly (7d)":{"used":60,"total":100,"resetAt":"2026-11-03T00:00:00Z"},
+          "session (5h)":{"used":0,"total":100},
+          "credits":{"used":5,"total":10}
+        }}
+        """#.utf8)
+        XCTAssertEqual(Quotas.parse(data).map(\.label), ["5h", "7d", "30d", "Credits"])
+    }
+
+    func testMergeKeepsShortestWindowFirst() {
+        let merged = Quotas.merge([
+            [QuotaWindow(label: "7d", usedPercent: 50, resetsAt: nil)],
+            [QuotaWindow(label: "5h", usedPercent: 10, resetsAt: nil), QuotaWindow(label: "7d", usedPercent: 20, resetsAt: nil)]
+        ])
+        XCTAssertEqual(merged.map(\.label), ["5h", "7d"], "the first account's order does not decide")
+    }
+
+    func testWindowDurations() {
+        XCTAssertEqual(Quotas.duration(of: "session (5h)"), 5 * 3_600)
+        XCTAssertEqual(Quotas.duration(of: "weekly (7d)"), 7 * 86_400)
+        XCTAssertEqual(Quotas.duration(of: "30d"), 30 * 86_400)
+        XCTAssertEqual(Quotas.duration(of: "1w"), 7 * 86_400)
+        XCTAssertEqual(Quotas.duration(of: "7 days"), 7 * 86_400)
+        XCTAssertEqual(Quotas.duration(of: "Monthly"), 30 * 86_400)
+        XCTAssertNil(Quotas.duration(of: "Credits"))
+    }
+
     func testTilesTakeQuotasOnlyFromUsableConnections() {
         let tiles = Dashboard.tiles(
             connections: [

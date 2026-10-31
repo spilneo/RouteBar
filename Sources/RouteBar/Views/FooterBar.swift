@@ -1,11 +1,22 @@
 import SwiftUI
 
-/// Every secondary action as an icon button, each explained on hover.
+/// Every secondary action as an icon button, each explained on hover, around
+/// a barely visible RouteBar mark with the version.
 /// Preferences live on the Settings screen behind the gear.
 struct FooterBar: View {
     @Bindable var model: AppModel
 
     var body: some View {
+        // The faint name and version sit centred in the footer's own height,
+        // so screenshots say what the app is without making the panel taller.
+        ZStack {
+            BrandMark()
+                .allowsHitTesting(false)
+            buttons
+        }
+    }
+
+    private var buttons: some View {
         HStack(spacing: 2) {
             IconButton(
                 systemImage: "square.and.arrow.down",

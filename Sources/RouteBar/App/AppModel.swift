@@ -40,6 +40,8 @@ final class AppModel {
     var problem: String?
     private(set) var notice: String?
     var isImporting = false
+    /// A model refresh started from the search field is running.
+    var isRefreshingModels = false
     var showsSettings = false
     /// The provider tile unfolded to list its accounts.
     var expandedProvider: String?
@@ -65,7 +67,9 @@ final class AppModel {
     var catalog: [String: CatalogProvider] = [:]
     var importedThisSession = false
     var transitionStarted: Date?
-    private var connections: [Connection] = []
+    /// Providers whose model lists were refreshed automatically this session.
+    var modelRefreshedProviders: Set<String> = []
+    private(set) var connections: [Connection] = []
     private var quotas: [String: [QuotaWindow]] = [:]
     private var catalogFetchedAt: Date?
     private var quotasFetchedAt: Date?
@@ -126,6 +130,7 @@ final class AppModel {
         catalogFetchedAt = nil
         quotasFetchedAt = nil
         versionFetchedAt = nil
+        modelRefreshedProviders = []
         Task { await refresh(panelOpened: true) }
     }
 
@@ -204,6 +209,7 @@ final class AppModel {
             update(\.models, to: Dashboard.models(entries, activeProviders: active, catalog: catalog))
             rebuildTiles()
             update(\.problem, to: nil)
+            refreshNewProvidersModels()
             if !isRemote, preferences.autoImport, !importedThisSession { await importLogins(includeInteractive: false) }
         } catch {
             guard generation == self.generation else { return false }
@@ -287,6 +293,11 @@ final class AppModel {
             expandedProvider = "claude"
         }
     #endif
+
+    /// Makes the next refresh read the catalog again, for example after a model refresh.
+    func invalidateCatalog() {
+        catalogFetchedAt = nil
+    }
 
     private func isStale(_ date: Date?, after seconds: TimeInterval) -> Bool {
         date.map { Date().timeIntervalSince($0) > seconds } ?? true

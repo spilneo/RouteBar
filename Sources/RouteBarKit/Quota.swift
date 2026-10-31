@@ -7,13 +7,16 @@ public struct QuotaWindow: Identifiable, Sendable, Equatable {
     /// Share of the window already used, 0…100.
     public let usedPercent: Double
     public let resetsAt: Date?
+    /// How long the window lasts, when its name says so ("session (5h)" → 5 hours).
+    public let duration: TimeInterval?
 
     public var id: String { label }
 
-    public init(label: String, usedPercent: Double, resetsAt: Date?) {
+    public init(label: String, usedPercent: Double, resetsAt: Date?, duration: TimeInterval? = nil) {
         self.label = label
         self.usedPercent = usedPercent
         self.resetsAt = resetsAt
+        self.duration = duration ?? Quotas.duration(of: label)
     }
 
     public enum Level: Sendable { case normal, high, critical }
@@ -34,10 +37,55 @@ public enum Quotas {
             guard let quota = value as? [String: Any], quota["unlimited"] as? Bool != true,
                   let used = usedPercent(quota) else { return nil }
             let reset = (quota["resetAt"] as? String).flatMap(parseDate)
-            return QuotaWindow(label: label(for: name), usedPercent: min(max(used, 0), 100), resetsAt: reset)
+            return QuotaWindow(label: label(for: name), usedPercent: min(max(used, 0), 100), resetsAt: reset,
+                               duration: duration(of: name))
         }
-        // The window that resets soonest first: "5h" before "7d".
-        return windows.sorted { ($0.resetsAt ?? .distantFuture, $0.label) < ($1.resetsAt ?? .distantFuture, $1.label) }
+        return sorted(windows)
+    }
+
+    /// The shortest window first, so the limit that runs out soonest sits on top:
+    /// "5h" above "7d" above "30d". Windows of unknown length follow, soonest reset first.
+    ///
+    /// Reset times alone are not enough: an idle 5-hour session may report no reset
+    /// time at all, which used to put it below the weekly window.
+    public static func sorted(_ windows: [QuotaWindow]) -> [QuotaWindow] {
+        windows.sorted { lhs, rhs in
+            switch (lhs.duration, rhs.duration) {
+            case (let left?, let right?) where left != right: return left < right
+            case (.some, .none): return true
+            case (.none, .some): return false
+            default:
+                let left = lhs.resetsAt ?? .distantFuture, right = rhs.resetsAt ?? .distantFuture
+                return left != right ? left < right : lhs.label < rhs.label
+            }
+        }
+    }
+
+    /// Reads a window length from names like "session (5h)", "weekly (7d)",
+    /// "30d", "1w", "monthly" or "daily". Nil when the name does not say.
+    public static func duration(of name: String) -> TimeInterval? {
+        let text = name.lowercased()
+        let units: [(suffixes: [String], seconds: TimeInterval)] = [
+            (["mo", "mon", "month", "months"], 30 * 86_400),
+            (["w", "wk", "week", "weeks"], 7 * 86_400),
+            (["d", "day", "days"], 86_400),
+            (["h", "hr", "hrs", "hour", "hours"], 3_600),
+            (["m", "min", "mins", "minute", "minutes"], 60)
+        ]
+        // The last "<number><unit>" in the name wins: "Opus (7d)" → 7 days.
+        let tokens = text.split { !$0.isLetter && !$0.isNumber && $0 != "." }
+        for token in tokens.reversed() {
+            let digits = token.prefix { $0.isNumber || $0 == "." }
+            guard !digits.isEmpty, let value = Double(digits) else { continue }
+            var unit = String(token.dropFirst(digits.count))
+            if unit.isEmpty, let next = tokens.drop(while: { $0 != token }).dropFirst().first { unit = String(next) }
+            if let match = units.first(where: { $0.suffixes.contains(unit) }) { return value * match.seconds }
+        }
+        let words: [(String, TimeInterval)] = [
+            ("hourly", 3_600), ("session", 5 * 3_600), ("daily", 86_400), ("day", 86_400),
+            ("weekly", 7 * 86_400), ("week", 7 * 86_400), ("monthly", 30 * 86_400), ("month", 30 * 86_400)
+        ]
+        return words.first { text.contains($0.0) }?.1
     }
 
     /// Merges several connections of one provider, keeping the busiest value per window.
@@ -52,7 +100,7 @@ public enum Quotas {
                 order.append(window.label)
             }
         }
-        return order.compactMap { merged[$0] }
+        return sorted(order.compactMap { merged[$0] })
     }
 
     static func usedPercent(_ quota: [String: Any]) -> Double? {

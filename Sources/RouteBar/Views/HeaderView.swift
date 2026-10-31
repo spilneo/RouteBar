@@ -21,9 +21,8 @@ struct HeaderView: View {
             }
             .disabled(model.server != .running)
             Toggle("Endpoint", isOn: Binding(get: { model.server.isOn }, set: { model.setServer(on: $0) }))
-                .toggleStyle(.switch)
+                .toggleStyle(PanelSwitchStyle(width: 34, height: 20))
                 .labelsHidden()
-                .controlSize(.small)
                 .disabled(model.server == .stopping)
                 .help(toggleHelp)
         }
