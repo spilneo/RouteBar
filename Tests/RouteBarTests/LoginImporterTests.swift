@@ -8,6 +8,8 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
         let method: String
         let path: String
         let body: Data?
+        var headers: [String: String] = [:]
+        var query: String?
     }
 
     nonisolated(unsafe) static var routes: [String: (Int, String)] = [:]
@@ -19,7 +21,13 @@ final class StubProtocol: URLProtocol, @unchecked Sendable {
     override func startLoading() {
         let method = request.httpMethod ?? "GET"
         let path = request.url?.path ?? ""
-        Self.requests.append(Recorded(method: method, path: path, body: request.httpBody ?? request.httpBodyStream.map(Self.read)))
+        Self.requests.append(Recorded(
+            method: method,
+            path: path,
+            body: request.httpBody ?? request.httpBodyStream.map(Self.read),
+            headers: request.allHTTPHeaderFields ?? [:],
+            query: request.url?.query
+        ))
         let (status, body) = Self.routes["\(method) \(path)"] ?? (404, #"{"error":"not found"}"#)
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)

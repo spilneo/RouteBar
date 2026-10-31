@@ -17,7 +17,7 @@ struct HeaderView: View {
             }
             Spacer(minLength: 4)
             IconButton(systemImage: "arrow.up.forward.app", help: "Open the OmniRoute dashboard") {
-                model.open(OmniRoute.dashboardURL)
+                model.open(model.dashboardURL)
             }
             .disabled(model.server != .running)
             Toggle("Endpoint", isOn: Binding(get: { model.server.isOn }, set: { model.setServer(on: $0) }))
@@ -25,7 +25,7 @@ struct HeaderView: View {
                 .labelsHidden()
                 .controlSize(.small)
                 .disabled(model.server == .stopping)
-                .help(model.server.isOn ? "Turn the endpoint off" : "Turn the endpoint on")
+                .help(toggleHelp)
         }
         .padding(.horizontal, 4)
     }
@@ -35,14 +35,25 @@ struct HeaderView: View {
         case .running: model.activeRequests > 0 ? "Serving \(model.activeRequests)" : "Running"
         case .starting: "Starting…"
         case .stopping: "Stopping…"
-        case .stopped: "Off"
+        case .stopped: model.isRemote ? "Not reachable" : "Off"
         }
+    }
+
+    private var toggleHelp: String {
+        if model.isRemote {
+            return model.server.isOn ? "Stop OmniRoute on \(model.serverLabel)" : "Start OmniRoute on \(model.serverLabel) to connect"
+        }
+        return model.server.isOn ? "Turn the endpoint off" : "Turn the endpoint on"
+    }
+
+    private var serverName: String {
+        model.isRemote ? "OmniRoute on \(model.serverLabel)" : "OmniRoute"
     }
 
     @ViewBuilder private var subtitle: some View {
         if let version = model.version, version.updateAvailable == true, let latest = version.latest {
             Button {
-                model.open(OmniRoute.dashboardURL)
+                model.open(model.dashboardURL)
             } label: {
                 Text("OmniRoute \(latest) is available")
                     .foregroundStyle(Theme.accent)
@@ -51,9 +62,11 @@ struct HeaderView: View {
             .font(.system(size: 11, weight: .medium))
             .help("Update from the OmniRoute dashboard")
         } else {
-            Text(model.version?.current.map { "OmniRoute \($0)" } ?? "OmniRoute")
+            Text(model.version?.current.map { "\(serverName) \($0)" } ?? serverName)
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
     }
 }

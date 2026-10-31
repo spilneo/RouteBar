@@ -1,15 +1,39 @@
 import Foundation
 import Observation
+import RouteBarKit
 import ServiceManagement
 
-/// The few settings RouteBar has, each shown as an icon button in the footer.
+/// A remote OmniRoute that RouteBar signed in to. The access token itself lives in the Keychain.
+struct RemoteServer: Codable, Equatable {
+    var url: URL
+    /// The token's name and scope as the server reported them.
+    var tokenName: String?
+    var scope: String?
+}
+
+/// How the endpoint is shown for a server on this Mac.
+enum EndpointHost: String, CaseIterable, Identifiable {
+    /// This Mac's LAN address, so the URL also works from other devices.
+    case network
+    case localhost
+
+    var id: String { rawValue }
+    var label: String { self == .network ? "Network address" : "localhost" }
+}
+
+/// RouteBar's settings, shown on the Settings screen.
 @MainActor
 @Observable
 final class Preferences {
     private enum Keys {
         static let wantsServer = "wantsServer"
         static let autoImport = "autoImportLogins"
+        static let endpointHost = "endpointHost"
+        static let remote = "remoteServer"
+        static let usesRemote = "usesRemoteServer"
     }
+
+    static let keychain = Keychain(service: "com.spilneo.RouteBar.remote")
 
     private let defaults: UserDefaults
 
@@ -23,6 +47,26 @@ final class Preferences {
         didSet { defaults.set(autoImport, forKey: Keys.autoImport) }
     }
 
+    var endpointHost: EndpointHost {
+        didSet { defaults.set(endpointHost.rawValue, forKey: Keys.endpointHost) }
+    }
+
+    /// The last remote server signed in to, kept so switching back needs no new sign-in.
+    var remote: RemoteServer? {
+        didSet {
+            if let remote, let data = try? JSONEncoder().encode(remote) {
+                defaults.set(data, forKey: Keys.remote)
+            } else {
+                defaults.removeObject(forKey: Keys.remote)
+            }
+        }
+    }
+
+    /// Manage `remote` instead of the OmniRoute on this Mac.
+    var usesRemote: Bool {
+        didSet { defaults.set(usesRemote, forKey: Keys.usesRemote) }
+    }
+
     /// Mirrors the login item registration. Read back after every change
     /// because macOS may refuse or require approval in System Settings.
     private(set) var opensAtLogin: Bool
@@ -33,6 +77,10 @@ final class Preferences {
         defaults.register(defaults: [Keys.wantsServer: true, Keys.autoImport: true])
         wantsServer = defaults.bool(forKey: Keys.wantsServer)
         autoImport = defaults.bool(forKey: Keys.autoImport)
+        endpointHost = defaults.string(forKey: Keys.endpointHost).flatMap(EndpointHost.init(rawValue:)) ?? .network
+        let remote = defaults.data(forKey: Keys.remote).flatMap { try? JSONDecoder().decode(RemoteServer.self, from: $0) }
+        self.remote = remote
+        usesRemote = remote != nil && defaults.bool(forKey: Keys.usesRemote)
         opensAtLogin = SMAppService.mainApp.status == .enabled
     }
 

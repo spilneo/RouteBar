@@ -64,10 +64,10 @@ final class DashboardTests: XCTestCase {
             Connection(provider: "claude", isActive: true, testStatus: "active"),
             Connection(provider: "", isActive: true)
         ], catalog: catalog)
-        XCTAssertEqual(tiles, [
-            ProviderTile(id: "codex", name: "Codex", isActive: false),
-            ProviderTile(id: "claude", name: "Claude Code", isActive: true)
-        ])
+        XCTAssertEqual(tiles.map(\.id), ["codex", "claude"])
+        XCTAssertEqual(tiles.map(\.name), ["Codex", "Claude Code"])
+        XCTAssertEqual(tiles.map(\.isActive), [false, true])
+        XCTAssertEqual(tiles.map(\.accounts.count), [1, 2])
     }
 
     func testBrokenConnectionIsNotUsable() {

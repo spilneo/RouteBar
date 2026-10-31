@@ -1,12 +1,11 @@
 import Foundation
 
-/// A connected provider as RouteBar shows it: one tile per provider id.
-public struct ProviderTile: Identifiable, Sendable, Equatable {
+/// One connected account of a provider, with its own limits.
+public struct ProviderAccount: Identifiable, Sendable, Equatable {
     public let id: String
+    /// Unique within the provider: the account email or connection name, numbered when repeated.
     public let name: String
-    /// At least one connection for this provider is enabled and healthy.
     public let isActive: Bool
-    /// Subscription windows, busiest value across the provider's connections.
     public let quotas: [QuotaWindow]
 
     public init(id: String, name: String, isActive: Bool, quotas: [QuotaWindow] = []) {
@@ -15,6 +14,28 @@ public struct ProviderTile: Identifiable, Sendable, Equatable {
         self.isActive = isActive
         self.quotas = quotas
     }
+}
+
+/// A connected provider as RouteBar shows it: one tile per provider id.
+public struct ProviderTile: Identifiable, Sendable, Equatable {
+    public let id: String
+    public let name: String
+    /// At least one connection for this provider is enabled and healthy.
+    public let isActive: Bool
+    /// Subscription windows, busiest value across the provider's connections.
+    public let quotas: [QuotaWindow]
+    /// Every connection of this provider, in OmniRoute's order.
+    public let accounts: [ProviderAccount]
+
+    public init(id: String, name: String, isActive: Bool, quotas: [QuotaWindow] = [], accounts: [ProviderAccount] = []) {
+        self.id = id
+        self.name = name
+        self.isActive = isActive
+        self.quotas = quotas
+        self.accounts = accounts
+    }
+
+    public var activeAccounts: Int { accounts.filter(\.isActive).count }
 }
 
 /// One bar of the usage chart.
@@ -35,27 +56,46 @@ public struct UsagePoint: Identifiable, Sendable, Equatable {
 public enum Dashboard {
     /// Groups connections by provider, keeping first-seen order, naming each
     /// provider from the catalog and attaching quotas of its usable connections.
+    /// Each tile also lists its accounts, so several logins of one provider stay apart.
     public static func tiles(
         connections: [Connection],
         catalog: [String: CatalogProvider],
         quotas: [String: [QuotaWindow]] = [:]
     ) -> [ProviderTile] {
         var order: [String] = []
-        var active: [String: Bool] = [:]
-        var windows: [String: [[QuotaWindow]]] = [:]
+        var grouped: [String: [Connection]] = [:]
         for connection in connections where !connection.provider.isEmpty {
-            if active[connection.provider] == nil { order.append(connection.provider) }
-            active[connection.provider] = (active[connection.provider] ?? false) || connection.isUsable
-            if connection.isUsable, let id = connection.id, let list = quotas[id] {
-                windows[connection.provider, default: []].append(list)
-            }
+            if grouped[connection.provider] == nil { order.append(connection.provider) }
+            grouped[connection.provider, default: []].append(connection)
         }
         return order.map { id in
-            ProviderTile(
+            let members = grouped[id] ?? []
+            let usable = members.filter(\.isUsable)
+            return ProviderTile(
                 id: id,
                 name: displayName(for: id, catalog: catalog),
-                isActive: active[id] ?? false,
-                quotas: Quotas.merge(windows[id] ?? [])
+                isActive: !usable.isEmpty,
+                quotas: Quotas.merge(usable.compactMap { $0.id.flatMap { quotas[$0] } }),
+                accounts: accounts(members, quotas: quotas)
+            )
+        }
+    }
+
+    /// Names each connection by its account, else its connection name, and
+    /// numbers repeats ("Claude (imported)", "Claude (imported) 2").
+    static func accounts(_ connections: [Connection], quotas: [String: [QuotaWindow]]) -> [ProviderAccount] {
+        var used: [String: Int] = [:]
+        return connections.enumerated().map { index, connection in
+            let base = [connection.account, connection.name]
+                .lazy.compactMap { $0?.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? "Account \(index + 1)"
+            let count = (used[base] ?? 0) + 1
+            used[base] = count
+            let id = connection.id ?? "\(connection.provider)#\(index)"
+            return ProviderAccount(
+                id: id,
+                name: count == 1 ? base : "\(base) \(count)",
+                isActive: connection.isUsable,
+                quotas: connection.isUsable ? connection.id.flatMap { quotas[$0] } ?? [] : []
             )
         }
     }

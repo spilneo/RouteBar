@@ -1,10 +1,11 @@
 import RouteBarKit
 import SwiftUI
 
-/// One flat brand colour, shared with the app icon (`logo.svg`), and a few
-/// metrics. No gradients anywhere.
+/// One flat accent colour, the brand indigo of the app icon (`logo.svg`)
+/// unless another preset is picked in Settings, and a few metrics. No gradients anywhere.
+@MainActor
 enum Theme {
-    static let accent = Color(red: 0x5e / 255, green: 0x5c / 255, blue: 0xe6 / 255)
+    static var accent: Color { Appearance.shared.accent.color }
     static let radius: CGFloat = 12
     static let width: CGFloat = 340
 

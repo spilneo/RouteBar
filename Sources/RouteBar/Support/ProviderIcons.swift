@@ -17,6 +17,13 @@ final class ProviderIcons {
 
     private(set) var icons: [String: Icon] = [:]
     private var requested: Set<String> = []
+    private var client = OmniRouteClient(cliToken: nil)
+
+    /// Loads logos from this server from now on. Logos are the same everywhere, so the cache is kept.
+    func use(_ client: OmniRouteClient) {
+        self.client = client
+        requested = requested.filter { icons[$0] != nil }
+    }
 
     func icon(for id: String) -> Icon? {
         if !requested.contains(id) {
@@ -27,10 +34,8 @@ final class ProviderIcons {
     }
 
     private func load(_ id: String) async {
-        guard let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return }
-        let url = OmniRoute.baseURL.appendingPathComponent("providers/\(encoded).svg")
-        guard let (data, response) = try? await URLSession.shared.data(from: url),
-              (response as? HTTPURLResponse)?.statusCode == 200,
+        guard let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let data = try? await client.call("GET", "/providers/\(encoded).svg"),
               let image = NSImage(data: data) else {
             requested.remove(id) // Retry next time, for example once OmniRoute is up.
             return

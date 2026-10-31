@@ -2,6 +2,8 @@ import Foundation
 
 public enum OmniRouteError: LocalizedError, Equatable {
     case unauthorized
+    /// A remote server refused the access token, or the password for a new one.
+    case refused(String?)
     case http(Int, String?)
     case unreachable
 
@@ -9,6 +11,8 @@ public enum OmniRouteError: LocalizedError, Equatable {
         switch self {
         case .unauthorized:
             "OmniRoute refused RouteBar's local token."
+        case .refused(let message):
+            message ?? "The server refused RouteBar's access token. Sign in again in Settings."
         case .http(let status, let message):
             message ?? "OmniRoute answered HTTP \(status)."
         case .unreachable:
@@ -17,29 +21,43 @@ public enum OmniRouteError: LocalizedError, Equatable {
     }
 }
 
-/// Minimal client for the loopback OmniRoute API.
+/// Minimal client for an OmniRoute server, local or remote.
 ///
-/// Management routes (`/api/*`) carry the local CLI token. `/v1/*` routes are
-/// the public inference surface and need no credential unless the operator
-/// enabled `REQUIRE_API_KEY`.
+/// Management routes (`/api/*`) carry a credential: the machine-bound CLI token
+/// for a loopback server, or a scoped `oma_` access token (`Authorization: Bearer`)
+/// for a remote one, exactly like `omniroute connect`. The CLI token is never sent
+/// to a non-loopback host. `/v1/*` is the public inference surface and needs no
+/// credential on loopback, so a remote client reads models from `/api/v1/models`.
 public struct OmniRouteClient: Sendable {
-    let baseURL: URL
+    public let baseURL: URL
     let session: URLSession
     let cliToken: String?
+    let accessToken: String?
 
-    public init(baseURL: URL = OmniRoute.baseURL, cliToken: String? = CLIToken.current(), timeout: TimeInterval = 4) {
+    public init(
+        baseURL: URL = OmniRoute.baseURL,
+        cliToken: String? = CLIToken.current(),
+        accessToken: String? = nil,
+        timeout: TimeInterval = 4
+    ) {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = timeout
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        configuration.connectionProxyDictionary = [:] // Loopback only: never route through a system proxy.
-        self.init(baseURL: baseURL, configuration: configuration, cliToken: cliToken)
+        if ServerAddress.isLoopback(baseURL) {
+            configuration.connectionProxyDictionary = [:] // Loopback: never route through a system proxy.
+        }
+        self.init(baseURL: baseURL, configuration: configuration, cliToken: cliToken, accessToken: accessToken)
     }
 
-    init(baseURL: URL, configuration: URLSessionConfiguration, cliToken: String?) {
+    init(baseURL: URL, configuration: URLSessionConfiguration, cliToken: String?, accessToken: String? = nil) {
         self.baseURL = baseURL
         self.session = URLSession(configuration: configuration)
-        self.cliToken = cliToken
+        self.cliToken = ServerAddress.isLoopback(baseURL) ? cliToken : nil
+        self.accessToken = accessToken
     }
+
+    /// True when the server runs on this Mac.
+    public var isLocal: Bool { ServerAddress.isLoopback(baseURL) }
 
     public func isOnline() async -> Bool {
         guard let (_, response) = try? await session.data(for: request("/api/health")) else { return false }
@@ -56,7 +74,8 @@ public struct OmniRouteClient: Sendable {
 
     /// One id per model (`?prefix=alias`) instead of the doubled `dual` catalog.
     public func models() async throws -> [ModelEntry] {
-        try await get("/v1/models", query: [URLQueryItem(name: "prefix", value: "alias")], as: ModelsResponse.self).data
+        let path = isLocal ? "/v1/models" : "/api/v1/models"
+        return try await get(path, query: [URLQueryItem(name: "prefix", value: "alias")], as: ModelsResponse.self).data
     }
 
     public func analytics(range: String) async throws -> Analytics {
@@ -90,6 +109,19 @@ public struct OmniRouteClient: Sendable {
         _ = try await send(request("/api/shutdown", method: "POST", body: Data("{}".utf8)))
     }
 
+    /// The credential the server sees: for an access token its name and scope.
+    public func whoami() async throws -> WhoAmI {
+        try await get("/api/cli/whoami", as: WhoAmI.self)
+    }
+
+    /// Exchanges a remote server's management password for a scoped access
+    /// token, the same call `omniroute connect` makes. The token is returned once.
+    public func mintAccessToken(password: String, name: String, scope: String = "admin") async throws -> MintedToken {
+        let body = try JSONSerialization.data(withJSONObject: ["password": password, "name": name, "scope": scope])
+        let data = try await send(request("/api/cli/connect", method: "POST", body: body))
+        return try JSONDecoder().decode(MintedToken.self, from: data)
+    }
+
     /// A raw management call for routes without a typed wrapper, such as the
     /// login importers. Non-2xx answers throw `OmniRouteError`.
     public func call(_ method: String, _ path: String, query: [URLQueryItem] = [], json: Data? = nil) async throws -> Data {
@@ -113,8 +145,9 @@ public struct OmniRouteClient: Sendable {
             request.httpBody = body
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        if path.hasPrefix("/api/"), let cliToken {
-            request.setValue(cliToken, forHTTPHeaderField: CLIToken.header)
+        if path.hasPrefix("/api/") {
+            if let accessToken { request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization") }
+            if let cliToken { request.setValue(cliToken, forHTTPHeaderField: CLIToken.header) }
         }
         return request
     }
@@ -132,7 +165,7 @@ public struct OmniRouteClient: Sendable {
         case 200..<300:
             return data
         case 401, 403:
-            throw OmniRouteError.unauthorized
+            throw cliToken == nil ? OmniRouteError.refused(Self.errorMessage(in: data)) : OmniRouteError.unauthorized
         default:
             throw OmniRouteError.http(status, Self.errorMessage(in: data))
         }

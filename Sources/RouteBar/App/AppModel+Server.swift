@@ -1,14 +1,24 @@
+import AppKit
 import Foundation
 
 /// Turning the OmniRoute endpoint on and off.
 extension AppModel {
     func setServer(on enabled: Bool) {
+        if isRemote {
+            if enabled {
+                // Nothing on this Mac can start a process on another one.
+                show("Start OmniRoute on \(serverLabel), RouteBar connects as soon as it answers")
+            } else if confirmRemoteStop() {
+                Task { await stopServer() }
+            }
+            return
+        }
         preferences.wantsServer = enabled
         if enabled { startServer() } else { Task { await stopServer() } }
     }
 
     func startServer() {
-        guard !server.isOn else { return }
+        guard !server.isOn, !isRemote else { return }
         do {
             try process.start()
             server = .starting
@@ -24,9 +34,28 @@ extension AppModel {
         server = .stopping
         transitionStarted = Date()
         // Shutting down through the API also covers an OmniRoute started outside RouteBar.
-        try? await client.shutdown()
-        process.stop()
+        do {
+            try await client.shutdown()
+        } catch where isRemote {
+            server = .running
+            problem = "Could not stop \(serverLabel): \(error.localizedDescription)"
+            return
+        } catch {}
+        if !isRemote { process.stop() }
         await refresh()
+    }
+
+    /// A remote server cannot be started again from RouteBar, so stopping it is confirmed.
+    private func confirmRemoteStop() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Stop OmniRoute on \(serverLabel)?"
+        alert.informativeText = "Every app using this server loses its endpoint. RouteBar cannot start a remote server again, "
+            + "so it has to be started on that machine."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Stop Server")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate()
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     /// Reconciles the believed state with what the health check saw, giving a

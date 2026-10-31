@@ -22,8 +22,9 @@ enum UsageRange: String, CaseIterable, Identifiable {
 
 /// Everything the panel shows, refreshed from OmniRoute on a short poll.
 ///
-/// Server lifecycle lives in `AppModel+Server.swift` and login import in
-/// `AppModel+Logins.swift`. This file owns the data and the refresh schedule.
+/// Server lifecycle lives in `AppModel+Server.swift`, login import in
+/// `AppModel+Logins.swift` and remote servers in `AppModel+Remote.swift`.
+/// This file owns the data and the refresh schedule.
 @MainActor
 @Observable
 final class AppModel {
@@ -39,6 +40,11 @@ final class AppModel {
     var problem: String?
     private(set) var notice: String?
     var isImporting = false
+    var showsSettings = false
+    /// The provider tile unfolded to list its accounts.
+    var expandedProvider: String?
+    /// This Mac's LAN address, set only once OmniRoute answered on it.
+    private(set) var lanAddress: String?
 
     var range: UsageRange = .week {
         didSet { Task { await refreshAnalytics() } }
@@ -52,7 +58,9 @@ final class AppModel {
 
     // MARK: Collaborators and caches
 
-    let client = OmniRouteClient()
+    private(set) var client: OmniRouteClient
+    /// Bumped whenever the server target changes, so late answers from the old one are dropped.
+    private(set) var generation = 0
     let process = ServerProcess()
     var catalog: [String: CatalogProvider] = [:]
     var importedThisSession = false
@@ -64,8 +72,62 @@ final class AppModel {
     private var versionFetchedAt: Date?
     private var pollTask: Task<Void, Never>?
     private var noticeTask: Task<Void, Never>?
+    private var lanCheckedAt: Date?
+    private var lanCandidate: String?
 
     var logURL: URL { process.logURL }
+
+    init() {
+        client = Self.makeClient(preferences: preferences)
+        ProviderIcons.shared.use(client)
+    }
+
+    // MARK: - Server target
+
+    var isRemote: Bool { !client.isLocal }
+
+    /// The server root as apps elsewhere should address it.
+    var serverRoot: URL {
+        guard client.isLocal else { return client.baseURL }
+        let host = preferences.endpointHost == .network ? lanAddress ?? "localhost" : "localhost"
+        return URL(string: "http://\(host):\(OmniRoute.port)")!
+    }
+
+    var endpoint: String { ServerAddress.endpoint(for: serverRoot) }
+    var serverLabel: String { ServerAddress.label(for: client.baseURL) }
+    var dashboardURL: URL { isRemote ? client.baseURL.appendingPathComponent("dashboard") : OmniRoute.dashboardURL }
+    var providersURL: URL { isRemote ? client.baseURL.appendingPathComponent("dashboard/providers") : OmniRoute.providersURL }
+
+    static func makeClient(preferences: Preferences) -> OmniRouteClient {
+        if preferences.usesRemote, let remote = preferences.remote {
+            let token = Preferences.keychain.read(remote.url.absoluteString)
+            return OmniRouteClient(baseURL: remote.url, cliToken: nil, accessToken: token, timeout: 6)
+        }
+        return OmniRouteClient()
+    }
+
+    /// Points every call at the server chosen in Settings and starts over with fresh data.
+    func applyServerTarget() {
+        client = Self.makeClient(preferences: preferences)
+        generation += 1
+        ProviderIcons.shared.use(client)
+        server = .stopped
+        transitionStarted = nil
+        tiles = []
+        models = []
+        usage = []
+        summary = nil
+        version = nil
+        activeRequests = 0
+        problem = nil
+        catalog = [:]
+        connections = []
+        quotas = [:]
+        catalogFetchedAt = nil
+        quotasFetchedAt = nil
+        versionFetchedAt = nil
+        Task { await refresh(panelOpened: true) }
+    }
 
     // MARK: - Lifecycle
 
@@ -73,7 +135,7 @@ final class AppModel {
         guard pollTask == nil else { return }
         pollTask = Task { [weak self] in
             guard let self else { return }
-            if await !client.isOnline(), preferences.wantsServer {
+            if !isRemote, await !client.isOnline(), preferences.wantsServer {
                 startServer()
             }
             var tick = 0
@@ -96,7 +158,9 @@ final class AppModel {
     // MARK: - Refresh
 
     func refresh(panelOpened: Bool = false) async {
+        let client = client, generation = generation
         let online = await client.isOnline()
+        guard generation == self.generation else { return }
         updateServerState(online: online)
         guard online else {
             tiles = []
@@ -104,35 +168,70 @@ final class AppModel {
             activeRequests = 0
             return
         }
+        await refreshLANAddress()
 
-        do {
-            if isStale(catalogFetchedAt, after: 60) {
-                catalog = await (try? client.catalog()) ?? catalog
-                catalogFetchedAt = Date()
-            }
-            connections = try await client.connections()
-            let active = Set(connections.filter(\.isUsable).map(\.provider))
-            let entries = try await client.models()
-            models = Dashboard.models(entries, activeProviders: active, catalog: catalog)
-            rebuildTiles()
-            problem = nil
-            if preferences.autoImport, !importedThisSession { await importLogins(includeInteractive: false) }
-        } catch {
-            problem = error.localizedDescription
-        }
+        guard await refreshInventory(client: client, generation: generation) else { return }
 
-        activeRequests = await (try? client.activeRequests()) ?? 0
+        let requests = await (try? client.activeRequests()) ?? 0
+        guard generation == self.generation else { return }
+        activeRequests = requests
         await refreshAnalytics()
         // Quotas come from the providers themselves, so they are polled sparingly.
         if isStale(quotasFetchedAt, after: panelOpened ? 30 : 90) { await refreshQuotas() }
         if isStale(versionFetchedAt, after: 600) {
-            version = try? await client.version()
+            let fetched = try? await client.version()
+            guard generation == self.generation else { return }
+            version = fetched
             versionFetchedAt = Date()
         }
     }
 
+    /// Providers and models. Returns false when the server target changed meanwhile.
+    private func refreshInventory(client: OmniRouteClient, generation: Int) async -> Bool {
+        do {
+            if isStale(catalogFetchedAt, after: 60) {
+                // A remote access token may not read the catalog; names then fall back to built-ins.
+                let fetched = await (try? client.catalog()) ?? catalog
+                guard generation == self.generation else { return false }
+                catalog = fetched
+                catalogFetchedAt = Date()
+            }
+            let fetched = try await client.connections()
+            let entries = try await client.models()
+            guard generation == self.generation else { return false }
+            connections = fetched
+            let active = Set(fetched.filter(\.isUsable).map(\.provider))
+            models = Dashboard.models(entries, activeProviders: active, catalog: catalog)
+            rebuildTiles()
+            problem = nil
+            if !isRemote, preferences.autoImport, !importedThisSession { await importLogins(includeInteractive: false) }
+        } catch {
+            guard generation == self.generation else { return false }
+            problem = error.localizedDescription
+        }
+        return generation == self.generation
+    }
+
+    /// Finds this Mac's LAN address and keeps it only if OmniRoute answers there,
+    /// which it does when it listens on every interface (its default).
+    private func refreshLANAddress() async {
+        guard client.isLocal else { return }
+        let candidate = NetworkAddress.lanIPv4()
+        guard candidate != lanCandidate || isStale(lanCheckedAt, after: 60) else { return }
+        lanCandidate = candidate
+        lanCheckedAt = Date()
+        guard let candidate, let url = URL(string: "http://\(candidate):\(OmniRoute.port)") else {
+            lanAddress = nil
+            return
+        }
+        let reachable = await OmniRouteClient(baseURL: url, cliToken: nil, timeout: 1.5).isOnline()
+        lanAddress = reachable ? candidate : nil
+    }
+
     func refreshAnalytics() async {
-        guard server == .running, let analytics = try? await client.analytics(range: range.rawValue) else { return }
+        let client = client, generation = generation
+        guard server == .running, let analytics = try? await client.analytics(range: range.rawValue),
+              generation == self.generation else { return }
         summary = analytics.summary
         usage = Dashboard.series(analytics.dailyTrend ?? [], days: range.days)
     }
@@ -140,7 +239,7 @@ final class AppModel {
     private func refreshQuotas() async {
         quotasFetchedAt = Date()
         let ids = connections.filter(\.isUsable).compactMap(\.id)
-        let client = client
+        let client = client, generation = generation
         let results = await withTaskGroup(of: (String, [QuotaWindow]?).self) { group in
             for id in ids {
                 group.addTask { await (id, try? client.quotas(connectionID: id)) }
@@ -151,6 +250,7 @@ final class AppModel {
             }
             return collected
         }
+        guard generation == self.generation else { return }
         quotas = results
         rebuildTiles()
     }
@@ -158,6 +258,28 @@ final class AppModel {
     private func rebuildTiles() {
         tiles = Dashboard.tiles(connections: connections, catalog: catalog, quotas: quotas)
     }
+
+    #if DEBUG
+        /// Snapshot fixture: many providers, one of them with several accounts.
+        func showDemoTiles() {
+            let soon = Date().addingTimeInterval(3 * 3_600), later = Date().addingTimeInterval(4 * 86_400)
+            func windows(_ session: Double, _ week: Double) -> [QuotaWindow] {
+                [QuotaWindow(label: "5h", usedPercent: session, resetsAt: soon), QuotaWindow(label: "7d", usedPercent: week, resetsAt: later)]
+            }
+            var connections = [
+                Connection(id: "c1", provider: "claude", name: "Claude (imported)", isActive: true, account: "me@example.com"),
+                Connection(id: "c2", provider: "claude", name: "Claude (imported)", isActive: true, account: "work@example.com"),
+                Connection(id: "c3", provider: "claude", name: "Team", isActive: true),
+                Connection(id: "c4", provider: "claude", name: "Old", isActive: false)
+            ]
+            for (index, id) in ["codex", "cursor", "gemini", "kiro", "github", "openai", "anthropic", "antigravity", "grok-cli"].enumerated() {
+                connections.append(Connection(id: "p\(index)", provider: id, isActive: index != 5))
+            }
+            let quotas = ["c1": windows(42, 18), "c2": windows(83, 61), "c3": windows(97, 40), "p0": windows(12, 55)]
+            tiles = Dashboard.tiles(connections: connections, catalog: catalog, quotas: quotas)
+            expandedProvider = "claude"
+        }
+    #endif
 
     private func isStale(_ date: Date?, after seconds: TimeInterval) -> Bool {
         date.map { Date().timeIntervalSince($0) > seconds } ?? true

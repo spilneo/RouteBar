@@ -7,7 +7,8 @@ extension AppModel {
     /// OmniRoute's own provider catalog. Automatic runs skip importers that can
     /// show a macOS permission prompt, a manual run includes them.
     func importLogins(includeInteractive: Bool) async {
-        guard !isImporting else { return }
+        // Logins on this Mac belong to the OmniRoute on this Mac, never to a remote one.
+        guard !isImporting, !isRemote else { return }
         isImporting = true
         importedThisSession = true
         defer { isImporting = false }

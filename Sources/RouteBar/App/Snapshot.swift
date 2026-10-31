@@ -3,15 +3,20 @@ import SwiftUI
 
 /// `ROUTEBAR_SNAPSHOT=/path/panel.png` renders the panel with live data into a
 /// PNG and quits. Used for README screenshots and visual checks.
+/// `ROUTEBAR_SNAPSHOT_SETTINGS=1` renders the Settings screen instead, and in
+/// debug builds `ROUTEBAR_SNAPSHOT_DEMO=1` swaps in many providers and accounts.
 @MainActor
 enum Snapshot {
     static func runIfRequested(model: AppModel) -> Bool {
         guard let path = ProcessInfo.processInfo.environment["ROUTEBAR_SNAPSHOT"], !path.isEmpty else { return false }
-        let dark = ProcessInfo.processInfo.environment["ROUTEBAR_SNAPSHOT_DARK"] == "1"
+        let environment = ProcessInfo.processInfo.environment
+        let dark = environment["ROUTEBAR_SNAPSHOT_DARK"] == "1"
         Task {
             await model.refresh()
             try? await Task.sleep(for: .seconds(2)) // provider logos load asynchronously
             await model.refresh()
+            model.showsSettings = environment["ROUTEBAR_SNAPSHOT_SETTINGS"] == "1"
+
             let content = PanelView(model: model)
                 .background(dark ? Color(white: 0.16) : Color(white: 0.97))
                 .environment(\.colorScheme, dark ? .dark : .light)
@@ -22,6 +27,15 @@ enum Snapshot {
             window.setContentSize(host.fittingSize)
             window.orderFrontRegardless()
             try? await Task.sleep(for: .seconds(1))
+            #if DEBUG
+                // After the refresh the panel triggers on appearing, so the fixture is not overwritten.
+                if environment["ROUTEBAR_SNAPSHOT_DEMO"] == "1" {
+                    model.showDemoTiles()
+                    try? await Task.sleep(for: .seconds(1))
+                    window.setContentSize(host.fittingSize)
+                    try? await Task.sleep(for: .seconds(0.5))
+                }
+            #endif
             if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
                 host.cacheDisplay(in: host.bounds, to: rep)
                 try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
