@@ -5,7 +5,7 @@
 <h1 align="center">RouteBar</h1>
 
 <p align="center">
-  The quiet way to run <a href="https://github.com/diegosouzapw/OmniRoute">OmniRoute</a> on a Mac.<br>
+  The quiet way to run <a href="https://github.com/cheaper-inference/OmniRoute">OmniRoute</a> on a Mac.<br>
   One endpoint, your subscriptions, every model. Right in the menu bar.
 </p>
 
@@ -26,13 +26,10 @@ click away.
 ## Install
 
 ```sh
-brew tap spilneo/tap
-brew trust spilneo/tap
-brew install --cask routebar
+brew trust --cask spilneo/tap/routebar && brew install --cask spilneo/tap/routebar
 ```
 
-Recent Homebrew versions only load casks from third-party taps you trust, which is what the
-second line does.
+Homebrew only loads casks from third-party taps you trust, so the command trusts RouteBar first.
 
 RouteBar needs macOS 14 Sonoma or later. Homebrew also installs Node.js, which OmniRoute runs on.
 
