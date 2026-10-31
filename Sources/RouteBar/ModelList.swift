@@ -2,28 +2,68 @@ import RouteBarKit
 import SwiftUI
 
 /// Searchable list of the models that active providers serve. Click to copy.
+///
+/// Collapsed to the search field until it is focused, so the panel stays short.
+/// The list also stays open while it holds a query or the pointer is over it,
+/// so clicking a row to copy it never collapses the list under the cursor.
 struct ModelList: View {
     @Bindable var model: AppModel
     @State private var query = ""
     @State private var copiedID: String?
+    @State private var hoveringList = false
+    /// Set by a click into the field. macOS may focus the field by itself when
+    /// the panel opens, and that alone must not unfold the list.
+    @State private var clickedIntoSearch = false
+    @State private var panelShownAt = Date.distantPast
     @FocusState private var searchFocused: Bool
 
     private var results: [String] { Dashboard.filter(model.models, query: query) }
+    private var isExpanded: Bool {
+        !model.models.isEmpty && ((searchFocused && clickedIntoSearch) || !query.isEmpty || hoveringList)
+    }
 
     var body: some View {
         VStack(spacing: 6) {
             searchField
-            Group {
-                if model.models.isEmpty {
-                    emptyState(emptyMessage)
-                } else if results.isEmpty {
-                    emptyState("No model matches “\(query)”")
-                } else {
-                    list
+            if isExpanded {
+                Group {
+                    if results.isEmpty {
+                        emptyState("No model matches “\(query)”")
+                    } else {
+                        list
+                    }
                 }
+                .frame(height: 176)
+                .onHover { hoveringList = $0 }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .frame(height: 176)
         }
+        .animation(.snappy(duration: 0.22), value: isExpanded)
+        // macOS focuses the first text field when the panel opens. Undo that so
+        // the list only opens when the user clicks into the search field.
+        .onChange(of: model.isPanelVisible, initial: true) { _, visible in
+            guard visible else { return collapse() }
+            panelShownAt = Date()
+            Task {
+                try? await Task.sleep(for: .milliseconds(60))
+                searchFocused = false
+            }
+        }
+        // Focus that arrives well after the panel opened comes from the user.
+        .onChange(of: searchFocused) { _, focused in
+            if !focused {
+                clickedIntoSearch = false
+            } else if Date().timeIntervalSince(panelShownAt) > 0.3 {
+                clickedIntoSearch = true
+            }
+        }
+    }
+
+    private func collapse() {
+        query = ""
+        hoveringList = false
+        clickedIntoSearch = false
+        searchFocused = false
     }
 
     private var emptyMessage: String {
@@ -39,19 +79,22 @@ struct ModelList: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
-            TextField("Search \(model.models.count) models", text: $query)
+            TextField(model.models.isEmpty ? emptyMessage : "Search \(model.models.count) models", text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
                 .focused($searchFocused)
+                .disabled(model.models.isEmpty)
                 .onSubmit { if let first = results.first { copy(first) } }
-            if !query.isEmpty {
+                .onExitCommand { collapse() }
+                .simultaneousGesture(TapGesture().onEnded { clickedIntoSearch = true })
+            if isExpanded {
                 Button {
-                    query = ""
+                    collapse()
                 } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
-                .help("Clear")
+                .help("Close")
             }
         }
         .padding(.horizontal, 9)

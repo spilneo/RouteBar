@@ -134,33 +134,3 @@ final class DashboardTests: XCTestCase {
         XCTAssertNil(OmniRouteClient.errorMessage(in: Data("oops".utf8)))
     }
 }
-
-final class LocalLoginsTests: XCTestCase {
-    let claude = Data(#"{"claudeAiOauth":{"accessToken":"a","refreshToken":"r","expiresAt":1}}"#.utf8)
-    let codex = Data(#"{"OPENAI_API_KEY":null,"tokens":{"id_token":"i","access_token":"a","refresh_token":"r"}}"#.utf8)
-
-    func testShapes() {
-        XCTAssertTrue(LocalLogins.isClaudeLogin(claude))
-        XCTAssertFalse(LocalLogins.isClaudeLogin(Data(#"{"claudeAiOauth":{"accessToken":""}}"#.utf8)))
-        XCTAssertTrue(LocalLogins.isCodexLogin(codex))
-        XCTAssertFalse(LocalLogins.isCodexLogin(Data(#"{"OPENAI_API_KEY":"sk-x"}"#.utf8)), "API-key mode is not a login")
-        XCTAssertFalse(LocalLogins.isCodexLogin(Data(#"{"tokens":{"access_token":"a","refresh_token":"r"}}"#.utf8)), "OmniRoute needs id_token")
-    }
-
-    func testFilesAreFoundAndPreferredOverKeychain() throws {
-        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: home) }
-        let files = FileManager.default
-        try files.createDirectory(at: home.appendingPathComponent(".claude"), withIntermediateDirectories: true)
-        try files.createDirectory(at: home.appendingPathComponent(".codex"), withIntermediateDirectories: true)
-
-        XCTAssertNil(LocalLogins.credentials(for: .codex, environment: [:], home: home, keychain: { nil }))
-        XCTAssertEqual(LocalLogins.credentials(for: .claude, environment: [:], home: home, keychain: { self.claude }), claude)
-
-        let fileLogin = Data(#"{"claudeAiOauth":{"accessToken":"file","refreshToken":"file"}}"#.utf8)
-        try fileLogin.write(to: home.appendingPathComponent(".claude/.credentials.json"))
-        try codex.write(to: home.appendingPathComponent(".codex/auth.json"))
-        XCTAssertEqual(LocalLogins.credentials(for: .claude, environment: [:], home: home, keychain: { self.claude }), fileLogin)
-        XCTAssertEqual(LocalLogins.credentials(for: .codex, environment: [:], home: home, keychain: { nil }), codex)
-    }
-}

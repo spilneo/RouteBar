@@ -38,14 +38,25 @@ RouteBar needs macOS 14 Sonoma or later. Homebrew also installs Node.js, which O
 1. Open RouteBar. The three-arrow icon appears in the menu bar.
 2. RouteBar starts OmniRoute on `http://localhost:20128`. If `omniroute` is not installed
    globally, it is fetched with `npx`, so the very first start can take a minute or two.
-3. Your existing logins are connected for you:
-   - **Claude Code**: read from the macOS Keychain item Claude Code created when you signed in.
-   - **Codex**: read from `~/.codex/auth.json`.
+3. Every AI tool you are already signed in to is connected for you. RouteBar runs each
+   local-login importer OmniRoute offers and names what it adds from OmniRoute's own provider
+   list, so there are no files to upload and nothing to configure. Today that covers:
 
-   This happens automatically, with no clicks and no files to upload. RouteBar only does it for a
-   tool you are signed in to and that OmniRoute does not have yet, and it never overwrites a
-   connection. Not signed in yet? Run `claude` or `codex login` once, then choose
-   **Import Logins Now** from the `⋯` menu.
+   | Tool          | Where the login is found                                   |
+   | ------------- | ---------------------------------------------------------- |
+   | Claude Code   | the macOS Keychain, or `~/.claude/.credentials.json`       |
+   | Codex         | `~/.codex/auth.json`                                       |
+   | Grok CLI      | `~/.grok/auth.json`                                        |
+   | Cursor        | the Cursor app or `cursor-agent`                           |
+   | Kiro          | the Kiro app or CLI                                        |
+   | Antigravity   | the Antigravity CLI token                                  |
+   | CLIProxyAPI   | every account in `~/.cli-proxy-api`                        |
+   | Zed           | the macOS Keychain, only when you ask (see below)          |
+
+   Imports never overwrite a connection. Zed keeps its keys in the Keychain behind a macOS
+   prompt, so it is only read when you choose **Import Logins Now** from the `⋯` menu, which
+   also catches tools you signed in to after launch. OpenCode is not listed because OmniRoute
+   has no importer for its logins yet.
 4. Copy the endpoint and paste it into any OpenAI-compatible app.
 
 ```sh
@@ -59,8 +70,8 @@ curl http://localhost:20128/v1/models
 | **Endpoint**  | Shows the base URL with its status. Copy it with one click, or switch the endpoint off and on.        |
 | **Usage**     | Tokens and requests for the last 7 or 30 days. Hover a bar to see that day.                           |
 | **Providers** | Every connected provider as a tile with its logo. Dimmed tiles have no working connection.            |
-| **Models**    | Only the models your active providers serve. Type to search, click a row to copy, or press Return to copy the top match. |
-| **`⋯` menu**  | Open at Login, automatic login import, the OmniRoute log, and Quit.                                    |
+| **Models**    | Only the models your active providers serve. The list unfolds when you click into search or start typing. Click a row to copy it, press Return to copy the top match, or Esc to fold it away. |
+| **`⋯` menu**  | Open at Login, automatic login import, Import Logins Now, the OmniRoute log, and Quit.                 |
 
 **Open Dashboard** takes you to the full OmniRoute dashboard for everything else, such as
 adding providers, combos, API keys and routing rules.

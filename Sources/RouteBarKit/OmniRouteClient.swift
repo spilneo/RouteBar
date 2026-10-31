@@ -17,12 +17,6 @@ public enum OmniRouteError: LocalizedError, Equatable {
     }
 }
 
-/// Result of handing a local login to OmniRoute.
-public enum ImportOutcome: Equatable, Sendable {
-    case imported
-    case alreadyPresent
-}
-
 /// Minimal client for the loopback OmniRoute API.
 ///
 /// Management routes (`/api/*`) carry the local CLI token. `/v1/*` routes are
@@ -38,6 +32,10 @@ public struct OmniRouteClient: Sendable {
         configuration.timeoutIntervalForRequest = timeout
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.connectionProxyDictionary = [:] // Loopback only: never route through a system proxy.
+        self.init(baseURL: baseURL, configuration: configuration, cliToken: cliToken)
+    }
+
+    init(baseURL: URL, configuration: URLSessionConfiguration, cliToken: String?) {
         self.baseURL = baseURL
         self.session = URLSession(configuration: configuration)
         self.cliToken = cliToken
@@ -70,29 +68,13 @@ public struct OmniRouteClient: Sendable {
         _ = try await send(request("/api/shutdown", method: "POST", body: Data("{}".utf8)))
     }
 
-    /// Imports a Claude Code `.credentials.json` (`{"claudeAiOauth": …}`).
-    public func importClaudeLogin(_ credentials: Data) async throws -> ImportOutcome {
-        try await importLogin(path: "/api/providers/claude-auth/import", json: credentials)
-    }
-
-    /// Imports a Codex CLI `auth.json`.
-    public func importCodexLogin(_ auth: Data) async throws -> ImportOutcome {
-        try await importLogin(path: "/api/providers/codex-auth/import", json: auth)
+    /// A raw management call for routes without a typed wrapper, such as the
+    /// login importers. Non-2xx answers throw `OmniRouteError`.
+    public func call(_ method: String, _ path: String, query: [URLQueryItem] = [], json: Data? = nil) async throws -> Data {
+        try await send(request(path, method: method, query: query, body: json))
     }
 
     // MARK: - Plumbing
-
-    private func importLogin(path: String, json: Data) async throws -> ImportOutcome {
-        let object = try JSONSerialization.jsonObject(with: json)
-        let payload: [String: Any] = ["source": ["kind": "json", "json": object], "overwriteExisting": false]
-        let body = try JSONSerialization.data(withJSONObject: payload)
-        do {
-            _ = try await send(request(path, method: "POST", body: body))
-            return .imported
-        } catch OmniRouteError.http(409, _) {
-            return .alreadyPresent
-        }
-    }
 
     private func get<T: Decodable>(_ path: String, query: [URLQueryItem] = [], as type: T.Type) async throws -> T {
         let data = try await send(request(path, query: query))

@@ -60,7 +60,8 @@ final class AppModel {
     private let defaults = UserDefaults.standard
     private var catalog: [String: CatalogProvider] = [:]
     private var catalogFetchedAt: Date?
-    private var importAttempted: Set<LocalLogins.Tool> = []
+    private var importedThisSession = false
+    private var importing = false
     private var pollTask: Task<Void, Never>?
     private var noticeTask: Task<Void, Never>?
     private var transitionStarted: Date?
@@ -155,7 +156,7 @@ final class AppModel {
             tiles = newTiles
             models = Dashboard.models(entries, activeProviders: active, catalog: catalog)
             problem = nil
-            await importLocalLogins(existing: Set(newTiles.map(\.id)))
+            if autoImport, !importedThisSession { await importLogins(includeInteractive: false) }
         } catch {
             problem = error.localizedDescription
         }
@@ -188,29 +189,37 @@ final class AppModel {
 
     // MARK: - Local logins
 
-    /// Hands Claude Code and Codex subscription logins to OmniRoute once per
-    /// session, only for providers that have no connection yet.
-    private func importLocalLogins(existing: Set<String>) async {
-        guard autoImport else { return }
-        for tool in LocalLogins.Tool.allCases where !existing.contains(tool.providerID) && !importAttempted.contains(tool) {
-            importAttempted.insert(tool)
-            let credentials = await Task.detached(priority: .utility) { LocalLogins.credentials(for: tool) }.value
-            guard let credentials else { continue }
-            do {
-                let outcome = switch tool {
-                case .claude: try await client.importClaudeLogin(credentials)
-                case .codex: try await client.importCodexLogin(credentials)
-                }
-                if outcome == .imported { show("Connected your \(tool.displayName) login") }
-            } catch {
-                show("Could not import the \(tool.displayName) login: \(error.localizedDescription)")
-            }
+    /// Runs every importer OmniRoute offers, then names what was added using
+    /// OmniRoute's own provider catalog. Automatic runs skip importers that can
+    /// show a macOS permission prompt, a manual run includes them.
+    private func importLogins(includeInteractive: Bool) async {
+        guard !importing else { return }
+        importing = true
+        importedThisSession = true
+        defer { importing = false }
+
+        let before = await Set(((try? client.connections()) ?? []).map(\.provider))
+        let importer = LoginImporter(client: client)
+        // Off the main actor: reading a Keychain item blocks on a child process.
+        let failures = await Task.detached(priority: .utility) {
+            await importer.run(connected: before, includeInteractive: includeInteractive)
+        }.value
+        let after = await (try? client.connections()) ?? []
+        let added = Dashboard.tiles(connections: after.filter { !before.contains($0.provider) }, catalog: catalog)
+
+        if !added.isEmpty {
+            show("Connected " + ListFormatter.localizedString(byJoining: added.map(\.name)))
+            await refresh()
+        } else if let failure = failures.first {
+            let name = Dashboard.displayName(for: failure.source, catalog: catalog)
+            show("Could not import the \(name) login: \(failure.message)")
+        } else if includeInteractive {
+            show("No new logins found on this Mac")
         }
     }
 
-    func retryImports() {
-        importAttempted.removeAll()
-        Task { await refresh() }
+    func importLoginsNow() {
+        Task { await importLogins(includeInteractive: true) }
     }
 
     // MARK: - Notices

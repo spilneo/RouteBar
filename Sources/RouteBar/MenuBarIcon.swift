@@ -17,7 +17,11 @@ enum MenuBarIcon {
     static func draw(alpha: CGFloat) -> NSImage {
         let size = NSSize(width: 18, height: 18)
         let image = NSImage(size: size, flipped: true) { _ in
-            let bounds = (minX: 216.0, minY: 216.0, side: 592.0) // arrows plus half the stroke
+            // Arrows plus half the stroke: x 216…808, y 174…850 (the outer heads reach
+            // 68 units past the side stems). A square around that, centred on 512,
+            // with half a point of margin so nothing touches the edge.
+            let side = 676.0 * 18 / 17
+            let bounds = (minX: 512 - side / 2, minY: 512 - side / 2, side: side)
             let scale = size.width / bounds.side
             let transform = NSAffineTransform()
             transform.scale(by: scale)

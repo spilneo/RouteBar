@@ -168,9 +168,9 @@ struct Footer: View {
 
             Menu {
                 Toggle("Open at Login", isOn: Binding(get: { model.opensAtLogin }, set: { model.opensAtLogin = $0 }))
-                Toggle("Import Claude Code and Codex Logins", isOn: $model.autoImport)
-                Button("Import Logins Now") { model.retryImports() }
-                    .disabled(!model.autoImport || model.server != .running)
+                Toggle("Import Local Logins Automatically", isOn: $model.autoImport)
+                Button("Import Logins Now") { model.importLoginsNow() }
+                    .disabled(model.server != .running)
                 Divider()
                 Button("Show OmniRoute Log") { NSWorkspace.shared.activateFileViewerSelecting([model.logURL]) }
                 Divider()
